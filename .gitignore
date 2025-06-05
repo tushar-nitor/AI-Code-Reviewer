@@ -1,0 +1,21 @@
+# Flutter (Frontend/)
+Frontend/build/
+Frontend/.dart_tool/
+Frontend/.packages
+Frontend/pubspec.lock
+Frontend/.idea/
+Frontend/.vscode/
+Frontend/*.iml
+
+# Node.js (backend/)
+backend/node_modules/
+backend/.env
+backend/.DS_Store
+backend/dist/
+backend/.vscode/
+backend/.genkit/
+
+
+# Global
+.DS_Store
+Thumbs.db
