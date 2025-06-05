@@ -3,12 +3,28 @@ import { ai } from "../ai.js";
 import { z } from "genkit";
 import { postGitHubPRCommentTool } from "../tools/github_tools.js"; // Import the new tool
 
+// Define the IssueTypeEnum for consistency
+const IssueTypeEnum = z
+  .enum([
+    "SECURITY",
+    "PERFORMANCE",
+    "READABILITY",
+    "BUG",
+    "STYLE",
+    "BEST_PRACTICE",
+    "TYPO",
+    "OTHER",
+  ])
+  .describe("Type of the issue identified in the suggestion.");
+
 // Define the schema for a single suggestion (consistent with your prReviewFlow output)
 const SuggestionSchema = z.object({
   fileName: z
     .string()
     .describe("The name of the file the suggestion applies to."),
   suggestionText: z.string().describe("The suggestion for improvement."),
+  type: IssueTypeEnum.optional(), // Make type optional in case LLM misses it sometimes
+
   // lineNumber: z
   //   .number()
   //   .optional()

@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 
 import 'dart:convert';
+import 'package:ai_code_reviewer/widgets/pr_charts.dart';
 import 'package:ai_code_reviewer/widgets/pr_diff_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_code_editor/flutter_code_editor.dart';
@@ -18,12 +19,27 @@ class CodeReviewScreen extends StatefulWidget {
 
 enum ReviewInputType { pasteCode, githubPr }
 
+
+
 class _CodeReviewScreenState extends State<CodeReviewScreen> {
   ReviewInputType _selectedInputType = ReviewInputType.pasteCode;
 
   final _languageController = TextEditingController();
   final _focusController = TextEditingController();
   final _prUrlController = TextEditingController();
+
+  static final Map<String, Color> typeColors = {
+    'SECURITY': Colors.red.shade700,
+    'PERFORMANCE': Colors.deepOrange.shade500,
+    'READABILITY': Colors.blue.shade600,
+    'BUG': Colors.purple.shade600,
+    'STYLE': Colors.green.shade600,
+    'BEST_PRACTICE': Colors.teal.shade500,
+    'TYPO': Colors.brown.shade400,
+    'OTHER': Colors.grey.shade500,
+    // Add 'N/A type' or similar if your AI might return null type frequently
+    'N/A type': Colors.blueGrey.shade200, // Fallback for when type is null
+  };
 
   final CodeController _codeController = CodeController(text: '// Enter your code\n ', language: dart);
   CodeController _correctedCodeEditor = CodeController(text: '', language: dart);
@@ -148,6 +164,8 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                       (s) => {
                         'fileName': s['fileName'] as String,
                         'suggestionText': s['suggestionText'] as String,
+                        'type': s['type'],
+                        'severity': s['severity'],
                         // "lineNumber": s['lineNumber'] as int,
                       },
                     )
@@ -363,7 +381,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                           child: CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
                         )
                       : const SizedBox(),
-                  label: SelectableText(
+                  label: Text(
                     isLoading ? 'Reviewing...' : 'Submit for Review',
                     style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
@@ -381,6 +399,8 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                 _sectionHeader('Summary'),
                 SelectableText(summary!),
                 const SizedBox(height: 24),
+                if (suggestions.isNotEmpty && _selectedInputType == ReviewInputType.githubPr)
+                  PRChartsWidget(suggestions: suggestions),
                 // Suggestions and Refactored Code (side-by-side)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -389,7 +409,11 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                       flex: 2,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [_sectionHeader('Suggestions'), const SizedBox(height: 8), _suggestionList()],
+                        children: [
+                          _sectionHeader('Suggestions'),
+                          const SizedBox(height: 8),
+                          _suggestionList(suggestions),
+                        ],
                       ),
                     ),
                     const SizedBox(width: 24),
@@ -525,7 +549,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
           const Icon(Icons.error_outline, color: Colors.red),
           const SizedBox(width: 8),
           Expanded(
-            child: SelectableText(
+            child: Text(
               message,
               style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600),
             ),
@@ -556,7 +580,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                   }
                 },
                 icon: const Icon(Icons.comment),
-                label: SelectableText("Post Suggestions", style: TextStyle(color: Colors.white)),
+                label: Text("Post Suggestions", style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
                   iconColor: Colors.white,
@@ -574,46 +598,126 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
   }
 
   // Updated _suggestionList to display filename
-  Widget _suggestionList() {
+  // Ensure _buildTypeBadge and _formatFileNameAndLine are accessible in this scope.
+  // If this _suggestionList method is part of a State class, ensure these helpers are too.
+
+  Widget _suggestionList(List<Map<String, dynamic>> suggestions) {
     if (suggestions.isEmpty) {
       return const SelectableText("No suggestions available.", style: TextStyle(color: Colors.grey));
     }
-    return Container(
-      padding: EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(width: 1, color: Colors.blue),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: suggestions
-            .map(
-              (s) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: suggestions.map((s) {
+        final String? fileName = s['fileName'] as String?;
+        final int? lineNumber = s['lineNumber'] as int?;
+        final String? suggestionText = s['suggestionText'] as String?;
+        final String? type = s['type'] as String?;
+
+        return Container(
+          // Use a subtle border or shadow for separation instead of a strong card
+          margin: const EdgeInsets.symmetric(vertical: 6.0),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor, // Use card background color
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1), // Very light shadow
+                spreadRadius: 1,
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Material(
+            // Use Material for InkWell splash effect
+            color: Colors.transparent, // Important for InkWell
+            child: InkWell(
+              onTap: () {
+                // Optional: Implement an action when a suggestion is tapped,
+                // e.g., navigate to file, copy suggestion, expand details.
+                // print('Tapped on suggestion for ${fileName ?? 'unknown file'}');
+              },
+              borderRadius: BorderRadius.circular(10), // Match container border
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.check_circle_outline, color: Colors.blue, size: 20),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (s['fileName'].isNotEmpty)
-                            SelectableText(
-                              s['fileName'] ?? 'Unknown File', // Display file name
-                              style: const TextStyle(fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.start, // Align to top if text wraps
+                      children: [
+                        if (fileName != null && fileName.isNotEmpty)
+                          Expanded(
+                            child: SelectableText(
+                              _formatFileNameAndLine(fileName, lineNumber),
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600, // Slightly bolder than normal
+                                fontSize: 15,
+                                color: Theme.of(context).colorScheme.primary, // Primary color for emphasis
+                              ),
+                              // maxLines: 2, // Allow filename to wrap if long
+                              //  overflow: TextOverflow.ellipsis,
                             ),
-                          SelectableText(s['suggestionText']!), // Display suggestion text
-                        ],
+                          ),
+                        const SizedBox(width: 12), // Space between file info and badge
+                        _buildTypeBadge(type), // Your type badge
+                      ],
+                    ),
+                    const SizedBox(height: 10), // Space between header and suggestion text
+
+                    SelectableText(
+                      suggestionText ?? 'No suggestion text provided.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        height: 1.5, // Good line height for readability
+                        color: Theme.of(context).textTheme.bodyMedium?.color, // Consistent text color
                       ),
                     ),
                   ],
                 ),
               ),
-            )
-            .toList(),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  // --- Helper Methods (Keep these as they are or adapt if you move them) ---
+
+  // Helper method to format file name and line number
+  String _formatFileNameAndLine(String? fileName, int? lineNumber) {
+    if (fileName == null || fileName.isEmpty) {
+      return 'Unknown File';
+    }
+    final String displayFileName = fileName.split('/').last; // Show just the file name
+    if (lineNumber != null) {
+      return '$displayFileName (line $lineNumber)';
+    }
+    return displayFileName;
+  }
+
+  // Ensure _buildTypeBadge is defined in the same class or scope
+  // static final Map<String, Color> _typeColors = { ... }; // Define these once
+  // Widget _buildTypeBadge(String? type) { ... } // Your helper function for the badge
+
+  Widget _buildTypeBadge(String? type) {
+    // Replace underscores for better readability (e.g., "BEST_PRACTICE" -> "BEST PRACTICE")
+    final String displayType = type?.replaceAll('_', ' ') ?? 'N/A Type';
+    final Color backgroundColor = typeColors[type] ?? Colors.grey.shade400; // Default color for unmapped types
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(color: backgroundColor, borderRadius: BorderRadius.circular(4)),
+      child: Text(
+        displayType,
+        style: const TextStyle(
+          color: Colors.white, // Text color should contrast well with background
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+        ),
       ),
     );
   }
