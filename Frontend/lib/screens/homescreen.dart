@@ -3,7 +3,9 @@
 import 'dart:convert';
 import 'package:ai_code_reviewer/widgets/pr_charts.dart';
 import 'package:ai_code_reviewer/widgets/pr_diff_viewer.dart';
+import 'package:ai_code_reviewer/widgets/refactor_diff_viewer.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_code_editor/flutter_code_editor.dart';
 import 'package:flutter_highlight/themes/github.dart';
 import 'package:highlight/languages/all.dart';
@@ -19,14 +21,16 @@ class CodeReviewScreen extends StatefulWidget {
 
 enum ReviewInputType { pasteCode, githubPr }
 
-
-
 class _CodeReviewScreenState extends State<CodeReviewScreen> {
   ReviewInputType _selectedInputType = ReviewInputType.pasteCode;
 
   final _languageController = TextEditingController();
   final _focusController = TextEditingController();
   final _prUrlController = TextEditingController();
+  final Map<String, bool> _isRefactoringFile = {};
+
+  String _originalCodeForDiff = "";
+  String _refactoredCodeForDiff = "";
 
   static final Map<String, Color> typeColors = {
     'SECURITY': Colors.red.shade700,
@@ -146,13 +150,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
           if (_selectedInputType == ReviewInputType.pasteCode) {
             suggestions =
                 (result['suggestions'] as List?)
-                    ?.map(
-                      (s) => {
-                        'fileName': "",
-                        'suggestionText': s as String,
-                        // "lineNumber": s['lineNumber'] as int,
-                      },
-                    )
+                    ?.map((s) => {'fileName': "", 'suggestionText': s as String})
                     .toList() ??
                 [];
           } else {
@@ -191,6 +189,73 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
     } finally {
       setState(() {
         isLoading = false;
+      });
+    }
+  }
+
+  // In _CodeReviewScreenState class
+
+  Future<void> _handleRefactorRequest(String fileName) async {
+    // --- 1. Set Loading State ---
+    setState(() {
+      _isRefactoringFile[fileName] = true;
+      error = null; // Clear previous errors
+    });
+
+    try {
+      // --- 2. Gather all suggestions for the given file ---
+      final suggestionsForFile = suggestions
+          .where((s) => s['fileName'] == fileName)
+          .map((s) => s['suggestionText'] as String)
+          .toList();
+
+      if (suggestionsForFile.isEmpty) {
+        throw Exception("No suggestions found for this file.");
+      }
+
+      // --- 3. Prepare the request for the new flow ---
+      final uri = Uri.http("localhost:3333", 'refactorFileFlow');
+      final headers = {'Content-Type': 'application/json'};
+      final parsedPr = _parseGitHubPrUrl(_prUrlController.text.trim());
+
+      if (parsedPr == null) {
+        throw Exception("Invalid PR URL");
+      }
+
+      final body = {
+        "owner": parsedPr['owner'],
+        "repo": parsedPr['repo'],
+        "pull_number": parsedPr['pull_number'],
+        "path": fileName,
+        "suggestions": suggestionsForFile,
+        "language": _languageController.text.trim(),
+      };
+
+      // --- 4. Make the API Call ---
+      final response = await http.post(uri, headers: headers, body: jsonEncode({'data': body}));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final result = data["result"];
+
+        // --- 5. Store results for the modal and show it ---
+        setState(() {
+          _originalCodeForDiff = result['originalContent'];
+          _refactoredCodeForDiff = result['refactoredContent'];
+        });
+
+        _showRefactorDiffModal(fileName, result['diff']);
+      } else {
+        throw Exception('Server error: ${response.statusCode}. ${response.body}');
+      }
+    } catch (e) {
+      setState(() {
+        error = 'Failed to refactor: $e';
+      });
+    } finally {
+      // --- 6. Unset Loading State ---
+      setState(() {
+        _isRefactoringFile[fileName] = false;
       });
     }
   }
@@ -239,7 +304,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
   void _resetReviewState() {
     summary = null;
     suggestions = [];
-    parsedDiff = null; // Clear parsed diff
+    prDiff = ""; // Clear parsed diff
     error = null;
     _correctedCodeEditor = CodeController(text: '', language: dart);
   }
@@ -416,7 +481,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(width: 24),
+                    if (_correctedCodeEditor.text.isNotEmpty) const SizedBox(width: 24),
                     if (_correctedCodeEditor.text.isNotEmpty)
                       Expanded(
                         flex: 3,
@@ -425,25 +490,53 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                           children: [
                             _sectionHeader('Refactored Code'),
                             const SizedBox(height: 8),
-                            Container(
-                              height: 500,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.blue),
-                                borderRadius: BorderRadius.circular(12),
-                                color: Colors.white,
-                              ),
-                              child: CodeTheme(
-                                data: CodeThemeData(styles: githubTheme),
-                                child: CodeField(
-                                  controller: _correctedCodeEditor,
-                                  textStyle: const TextStyle(fontFamily: 'SourceCodePro'),
-                                  expands: true,
-                                  maxLines: null,
-                                  minLines: null,
-                                  readOnly: true, // Refactored code should typically be read-only
+
+                            Stack(
+                              children: [
+                                // Code Editor Container
+                                Container(
+                                  height: 500,
+                                  padding: const EdgeInsets.all(5),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.blue),
+                                    borderRadius: BorderRadius.circular(12),
+                                    color: Colors.white,
+                                  ),
+                                  child: CodeTheme(
+                                    data: CodeThemeData(styles: githubTheme),
+                                    child: CodeField(
+                                      controller: _correctedCodeEditor,
+                                      textStyle: const TextStyle(fontFamily: 'SourceCodePro'),
+                                      expands: true,
+                                      maxLines: null,
+                                      minLines: null,
+                                      readOnly: false,
+                                    ),
+                                  ),
                                 ),
-                              ),
+
+                                // Copy Button Positioned at Top Right
+                                Positioned(
+                                  top: 8,
+                                  right: 8,
+                                  child: Material(
+                                    color: Colors.white,
+                                    shape: const CircleBorder(),
+                                    elevation: 2,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.copy, size: 20, color: Colors.blue),
+                                      tooltip: 'Copy code',
+                                      onPressed: () {
+                                        final codeText = _correctedCodeEditor.text;
+                                        Clipboard.setData(ClipboardData(text: codeText));
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(const SnackBar(content: Text('Code copied to clipboard')));
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
@@ -453,70 +546,70 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                 const SizedBox(height: 24),
 
                 // --- Display Parsed Diff (only for GitHub PRs) ---
-                if (_selectedInputType == ReviewInputType.githubPr && parsedDiff != null && parsedDiff!.isNotEmpty) ...[
-                  _sectionHeader('Original PR Changes (File by File)'),
-                  const SizedBox(height: 8),
-                  // Map each file diff to a display widget
-                  ...parsedDiff!.map((fileDiff) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SelectableText(
-                            fileDiff['filePath'] ?? 'Unknown File', // Display file path
-                            style: theme.textTheme.titleMedium!.copyWith(color: Colors.blueGrey[700]),
-                          ),
-                          const Divider(color: Colors.blueGrey),
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey[300]!),
-                              borderRadius: BorderRadius.circular(8),
-                              color: Colors.white,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Display deleted lines in red
-                                if (fileDiff['deletedLines'].isNotEmpty)
-                                  ...fileDiff['deletedLines'].map(
-                                    (line) => SelectableText(
-                                      '- ${line}',
-                                      style: const TextStyle(
-                                        fontFamily: 'SourceCodePro',
-                                        fontSize: 12,
-                                        color: Colors.red,
-                                      ),
-                                    ),
-                                  ),
-                                // Display added lines in green
-                                if (fileDiff['addedLines'].isNotEmpty)
-                                  ...fileDiff['addedLines'].map(
-                                    (line) => SelectableText(
-                                      '+ $line',
-                                      style: const TextStyle(
-                                        fontFamily: 'SourceCodePro',
-                                        fontSize: 12,
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                  ),
-                                // Message if no significant line changes (e.g., file rename)
-                                if (fileDiff['addedLines'].isEmpty && fileDiff['deletedLines'].isEmpty)
-                                  const SelectableText(
-                                    'No significant line changes detected in this file (e.g., file rename or content-only changes).',
-                                    style: TextStyle(fontFamily: 'SourceCodePro', fontSize: 12, color: Colors.grey),
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 24),
-                ],
+                // if (_selectedInputType == ReviewInputType.githubPr && parsedDiff != null && parsedDiff!.isNotEmpty) ...[
+                //   _sectionHeader('Original PR Changes (File by File)'),
+                //   const SizedBox(height: 8),
+                //   // Map each file diff to a display widget
+                //   ...parsedDiff!.map((fileDiff) {
+                //     return Padding(
+                //       padding: const EdgeInsets.only(bottom: 16.0),
+                //       child: Column(
+                //         crossAxisAlignment: CrossAxisAlignment.start,
+                //         children: [
+                //           SelectableText(
+                //             fileDiff['filePath'] ?? 'Unknown File', // Display file path
+                //             style: theme.textTheme.titleMedium!.copyWith(color: Colors.blueGrey[700]),
+                //           ),
+                //           const Divider(color: Colors.blueGrey),
+                //           Container(
+                //             padding: const EdgeInsets.all(8),
+                //             decoration: BoxDecoration(
+                //               border: Border.all(color: Colors.grey[300]!),
+                //               borderRadius: BorderRadius.circular(8),
+                //               color: Colors.white,
+                //             ),
+                //             child: Column(
+                //               crossAxisAlignment: CrossAxisAlignment.start,
+                //               children: [
+                //                 // Display deleted lines in red
+                //                 if (fileDiff['deletedLines'].isNotEmpty)
+                //                   ...fileDiff['deletedLines'].map(
+                //                     (line) => SelectableText(
+                //                       '- ${line}',
+                //                       style: const TextStyle(
+                //                         fontFamily: 'SourceCodePro',
+                //                         fontSize: 12,
+                //                         color: Colors.red,
+                //                       ),
+                //                     ),
+                //                   ),
+                //                 // Display added lines in green
+                //                 if (fileDiff['addedLines'].isNotEmpty)
+                //                   ...fileDiff['addedLines'].map(
+                //                     (line) => SelectableText(
+                //                       '+ $line',
+                //                       style: const TextStyle(
+                //                         fontFamily: 'SourceCodePro',
+                //                         fontSize: 12,
+                //                         color: Colors.blue,
+                //                       ),
+                //                     ),
+                //                   ),
+                //                 // Message if no significant line changes (e.g., file rename)
+                //                 if (fileDiff['addedLines'].isEmpty && fileDiff['deletedLines'].isEmpty)
+                //                   const SelectableText(
+                //                     'No significant line changes detected in this file (e.g., file rename or content-only changes).',
+                //                     style: TextStyle(fontFamily: 'SourceCodePro', fontSize: 12, color: Colors.grey),
+                //                   ),
+                //               ],
+                //             ),
+                //           ),
+                //         ],
+                //       ),
+                //     );
+                //   }),
+                //   const SizedBox(height: 24),
+                // ],
                 if (prDiff.isNotEmpty || _selectedInputType == ReviewInputType.githubPr) GitDiffWidget(prDiff: prDiff),
 
                 // --- End Display Parsed Diff ---
@@ -606,102 +699,152 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       return const SelectableText("No suggestions available.", style: TextStyle(color: Colors.grey));
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: suggestions.map((s) {
-        final String? fileName = s['fileName'] as String?;
-        final int? lineNumber = s['lineNumber'] as int?;
-        final String? suggestionText = s['suggestionText'] as String?;
-        final String? type = s['type'] as String?;
+    if (_selectedInputType == ReviewInputType.pasteCode) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: suggestions.map((s) {
+          final String? suggestionText = s['suggestionText'] as String?;
 
-        return Container(
-          // Use a subtle border or shadow for separation instead of a strong card
-          margin: const EdgeInsets.symmetric(vertical: 6.0),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor, // Use card background color
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1), // Very light shadow
-                spreadRadius: 1,
-                blurRadius: 3,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: Material(
-            // Use Material for InkWell splash effect
-            color: Colors.transparent, // Important for InkWell
-            child: InkWell(
-              onTap: () {
-                // Optional: Implement an action when a suggestion is tapped,
-                // e.g., navigate to file, copy suggestion, expand details.
-                // print('Tapped on suggestion for ${fileName ?? 'unknown file'}');
-              },
-              borderRadius: BorderRadius.circular(10), // Match container border
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start, // Align to top if text wraps
-                      children: [
-                        if (fileName != null && fileName.isNotEmpty)
-                          Expanded(
-                            child: SelectableText(
-                              _formatFileNameAndLine(fileName, lineNumber),
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600, // Slightly bolder than normal
-                                fontSize: 15,
-                                color: Theme.of(context).colorScheme.primary, // Primary color for emphasis
-                              ),
-                              // maxLines: 2, // Allow filename to wrap if long
-                              //  overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        const SizedBox(width: 12), // Space between file info and badge
-                        _buildTypeBadge(type), // Your type badge
-                      ],
-                    ),
-                    const SizedBox(height: 10), // Space between header and suggestion text
-
-                    SelectableText(
-                      suggestionText ?? 'No suggestion text provided.',
-                      style: TextStyle(
-                        fontSize: 14,
-                        height: 1.5, // Good line height for readability
-                        color: Theme.of(context).textTheme.bodyMedium?.color, // Consistent text color
-                      ),
-                    ),
-                  ],
+          return Container(
+            margin: const EdgeInsets.symmetric(vertical: 6.0),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 3,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  // Optional: Add onTap behavior here
+                },
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: SelectableText(
+                    suggestionText ?? 'No suggestion text provided.',
+                    style: TextStyle(fontSize: 14, height: 1.5, color: Theme.of(context).textTheme.bodyMedium?.color),
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      }).toList(),
-    );
-  }
+          );
+        }).toList(),
+      );
+    } else {
+      // Group suggestions by fileName
+      final Map<String, List<Map<String, dynamic>>> grouped = {};
+      for (final s in suggestions) {
+        final fileName = s['fileName'] ?? 'Unknown File';
+        grouped.putIfAbsent(fileName, () => []).add(s);
+      }
 
-  // --- Helper Methods (Keep these as they are or adapt if you move them) ---
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: grouped.entries.map((entry) {
+          final fileName = entry.key;
+          final fileSuggestions = entry.value;
 
-  // Helper method to format file name and line number
-  String _formatFileNameAndLine(String? fileName, int? lineNumber) {
-    if (fileName == null || fileName.isEmpty) {
-      return 'Unknown File';
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 20.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // MODIFICATION: Wrap the file name and button in a Row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // File Name
+                    Expanded(
+                      child: SelectableText(
+                        fileName,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ),
+                    // NEW: "Apply & Preview" Button
+                    _isRefactoringFile[fileName] ?? false
+                        ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 3))
+                        : ElevatedButton.icon(
+                            onPressed: () => _handleRefactorRequest(fileName),
+                            icon: const Icon(Icons.auto_awesome, size: 16),
+                            label: const Text("Apply & Preview"),
+                            style: ElevatedButton.styleFrom(
+                              foregroundColor: Colors.white,
+                              backgroundColor: const Color.fromARGB(255, 62, 164, 65),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                ...fileSuggestions.map((s) {
+                  //  final int? lineNumber = s['lineNumber'] as int?;
+                  final String? suggestionText = s['suggestionText'] as String?;
+                  final String? type = s['type'] as String?;
+
+                  return Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(vertical: 6.0),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.1),
+                          spreadRadius: 1,
+                          blurRadius: 3,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          // Optional action on tap
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildTypeBadge(type),
+
+                              const SizedBox(height: 10),
+                              SelectableText(
+                                suggestionText ?? 'No suggestion text provided.',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  height: 1.5,
+                                  color: Theme.of(context).textTheme.bodyMedium?.color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          );
+        }).toList(),
+      );
     }
-    final String displayFileName = fileName.split('/').last; // Show just the file name
-    if (lineNumber != null) {
-      return '$displayFileName (line $lineNumber)';
-    }
-    return displayFileName;
   }
-
-  // Ensure _buildTypeBadge is defined in the same class or scope
-  // static final Map<String, Color> _typeColors = { ... }; // Define these once
-  // Widget _buildTypeBadge(String? type) { ... } // Your helper function for the badge
 
   Widget _buildTypeBadge(String? type) {
     // Replace underscores for better readability (e.g., "BEST_PRACTICE" -> "BEST PRACTICE")
@@ -720,5 +863,172 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
         ),
       ),
     );
+  }
+  // In _CodeReviewScreenState class
+
+  // In _CodeReviewScreenState class
+
+  void _showRefactorDiffModal(String fileName, String diff) {
+    // Create controllers for the two code editors in the dialog
+    final originalController = CodeController(
+      text: _originalCodeForDiff,
+      language: allLanguages[_languageController.text.trim().toLowerCase()] ?? dart,
+    );
+    final refactoredController = CodeController(
+      text: _refactoredCodeForDiff,
+      language: allLanguages[_languageController.text.trim().toLowerCase()] ?? dart,
+    );
+    bool showDiffOnly = false;
+
+    showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.7),
+      builder: (context) {
+        // StatefulBuilder allows the dialog's content to have its own state.
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // This state is local to the dialog
+
+            return AlertDialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              // The title now includes the toggle switch
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.difference, color: Colors.blue),
+                      const SizedBox(width: 8),
+                      // Use Flexible to prevent long filenames from causing an overflow
+                      Flexible(child: Text('Preview: $fileName', overflow: TextOverflow.ellipsis)),
+                    ],
+                  ),
+                  // The Toggle Switch to change views
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(showDiffOnly ? 'Diff View' : 'Side-by-Side', style: TextStyle(fontSize: 16)),
+                      const SizedBox(width: 8),
+                      Transform.scale(
+                        scale: .7,
+                        child: Switch.adaptive(
+                          value: showDiffOnly,
+                          onChanged: (value) {
+                            // Use the dialog's own setState to rebuild its content
+                            setDialogState(() {
+                              showDiffOnly = value;
+                            });
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: MediaQuery.of(context).size.width * 0.85,
+                height: MediaQuery.of(context).size.height * 0.65,
+                // Conditionally display the correct view based on the toggle state
+                child: showDiffOnly
+                    // --- A. THE DIFF VIEW ---
+                    ? DiffViewer(diffText: diff)
+                    // --- B. THE SIDE-BY-SIDE VIEW (Your working layout) ---
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Original Code Viewer
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text("Original", style: TextStyle(fontWeight: FontWeight.bold)),
+                                const Divider(),
+                                Expanded(
+                                  child: CodeTheme(
+                                    data: CodeThemeData(styles: githubTheme),
+                                    child: SingleChildScrollView(
+                                      scrollDirection: Axis.vertical,
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: SizedBox(
+                                          width: 1200,
+                                          child: CodeField(
+                                            controller: originalController,
+                                            readOnly: true,
+                                            textStyle: const TextStyle(fontFamily: 'SourceCodePro'),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          // Refactored Code Viewer
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text("Refactored", style: TextStyle(fontWeight: FontWeight.bold)),
+                                const Divider(),
+                                Expanded(
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      border: Border.all(color: Colors.blue.shade200),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: CodeTheme(
+                                      data: CodeThemeData(styles: githubTheme),
+                                      child: SingleChildScrollView(
+                                        scrollDirection: Axis.vertical,
+                                        child: SingleChildScrollView(
+                                          scrollDirection: Axis.horizontal,
+                                          child: SizedBox(
+                                            width: 1200,
+                                            child: CodeField(
+                                              controller: refactoredController,
+                                              readOnly: false,
+                                              textStyle: const TextStyle(fontFamily: 'SourceCodePro'),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Close")),
+                ElevatedButton.icon(
+                  // The button's label and action change based on the view
+                  icon: const Icon(Icons.copy),
+                  label: Text("Copy Refactored Code"),
+                  onPressed: () {
+                    final textToCopy = refactoredController.text;
+                    Clipboard.setData(ClipboardData(text: textToCopy));
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text(showDiffOnly ? 'Diff copied!' : 'Refactored code copied!')));
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, foregroundColor: Colors.white),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      originalController.dispose();
+      refactoredController.dispose();
+    });
   }
 }

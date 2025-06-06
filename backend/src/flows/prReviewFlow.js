@@ -161,6 +161,7 @@ export const prReviewFlow = ai.defineFlow(
       const prompt = ` You are an expert and meticulous code reviewer with deep knowledge of ${
         input.language
       }. Your role is to **analyze every single change in the provided code diff** and provide a **thorough, high-quality review**.
+    **  And please do not add any review if the code have'nt any issue**
 
 Your focus should include (but is not limited to):
 ${

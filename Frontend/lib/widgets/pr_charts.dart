@@ -98,8 +98,8 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
         color: typeColors[entry.key] ?? Colors.black,
         value: entry.value.toDouble(),
         title: '${entry.key}\n(${percentage.toStringAsFixed(1)}%)',
-        radius: 120, // Adjusted size
-        titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
+        radius: 110, // Adjusted size
+        titleStyle: const TextStyle(fontSize: 10, color: Colors.white),
         titlePositionPercentageOffset: 0.55, // Keep or slightly increase if titles overlap
       );
     }).toList();
