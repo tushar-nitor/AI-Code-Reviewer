@@ -45,7 +45,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
     'N/A type': Colors.blueGrey.shade200, // Fallback for when type is null
   };
 
-  final CodeController _codeController = CodeController(text: '// Enter your code\n ', language: dart);
+  final CodeController _codeController = CodeController(text: '// Enter your code\n', language: dart);
   CodeController _correctedCodeEditor = CodeController(text: '', language: dart);
 
   String? summary;
@@ -68,18 +68,25 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
     final language = _languageController.text.trim();
     final focusAreas = _focusController.text.trim();
 
+    // --- CHANGED: Reset state and start loading FIRST ---
+    setState(() {
+      isLoading = true;
+      _resetReviewState(); // Reset all previous review data at the beginning
+    });
+
+    // --- All Validation Blocks Updated ---
     if (language.isEmpty) {
       setState(() {
         error = "Programming language is required.";
-        _resetReviewState();
+        isLoading = false; // Stop loading on validation failure
       });
       return;
     }
 
-    if (_selectedInputType == ReviewInputType.pasteCode && _codeController.text.trim().isEmpty) {
+    if (_selectedInputType == ReviewInputType.pasteCode && _codeController.text.trim() != '// Enter your code\n') {
       setState(() {
         error = "Please paste the code to review.";
-        _resetReviewState();
+        isLoading = false; // Stop loading on validation failure
       });
       return;
     }
@@ -89,7 +96,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       if (prUrl.isEmpty) {
         setState(() {
           error = "Please enter the GitHub PR URL.";
-          _resetReviewState();
+          isLoading = false; // Stop loading on validation failure
         });
         return;
       }
@@ -100,28 +107,24 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
           parsedPr['pull_number'] == null) {
         setState(() {
           error = "Invalid GitHub PR URL format. Expected: github.com/owner/repo/pull/number";
-          _resetReviewState();
+          isLoading = false; // Stop loading on validation failure
         });
         return;
       }
     }
 
-    setState(() {
-      isLoading = true;
-      _resetReviewState(); // Reset all previous review data
-    });
+    // The loading state is already true, no need for another setState here.
 
     try {
       Uri url;
       Map<String, dynamic> requestData;
 
       if (_selectedInputType == ReviewInputType.pasteCode) {
-        url = Uri.http("localhost:3333", 'codeReviewFlow'); // Assumes you have a 'codeReviewFlow'
+        url = Uri.http("localhost:3333", 'codeReviewFlow');
         requestData = {"code": _codeController.text.trim(), "language": language};
         if (focusAreas.isNotEmpty) requestData["focusAreas"] = focusAreas;
       } else {
-        // ReviewInputType.githubPr
-        url = Uri.http("localhost:3333", 'prReviewFlow'); // Use the 'prReviewFlow'
+        url = Uri.http("localhost:3333", 'prReviewFlow');
         final parsedPr = _parseGitHubPrUrl(_prUrlController.text.trim());
         requestData = {
           "owner": parsedPr!['owner'],
@@ -135,18 +138,17 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'data': requestData}), // Wrap in 'data' as per Genkit's default
+        body: jsonEncode({'data': requestData}),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final result = data["result"]; // Genkit response usually has 'result' field
+        final result = data["result"];
 
         final correctedCode = result['correctedCode'] as String? ?? '';
 
         setState(() {
           summary = result['summary'] as String?;
-          // Correctly parse suggestions into List<Map<String, String>>
           if (_selectedInputType == ReviewInputType.pasteCode) {
             suggestions =
                 (result['suggestions'] as List?)
@@ -155,7 +157,6 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                 [];
           } else {
             prDiff = result['parsedDiff'];
-
             suggestions =
                 (result['suggestions'] as List?)
                     ?.map(
@@ -164,38 +165,37 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                         'suggestionText': s['suggestionText'] as String,
                         'type': s['type'],
                         'severity': s['severity'],
-                        // "lineNumber": s['lineNumber'] as int,
                       },
                     )
                     .toList() ??
                 [];
           }
-
-          //   parsedDiff = (jsonDecode(result['parsedDiff']) as List).map((item) => item as Map<String, dynamic>).toList();
           _correctedCodeEditor = CodeController(
             text: correctedCode,
             language: allLanguages[_languageController.text.trim().toLowerCase()] ?? dart,
           );
         });
       } else {
+        // This part correctly sets the error.
         setState(() {
           error = 'Server error: ${response.statusCode}. ${response.body}';
         });
       }
     } catch (e) {
+      // This part also correctly sets the error.
       setState(() {
         error = 'Request failed: $e';
       });
     } finally {
+      // This correctly stops the loading indicator after success or failure.
       setState(() {
         isLoading = false;
       });
     }
   }
-
   // In _CodeReviewScreenState class
 
-  Future<void> _handleRefactorRequest(String fileName) async {
+  Future<void> _handleRefactorRequest(String fileName, List<String> suggestionsToApply) async {
     // --- 1. Set Loading State ---
     setState(() {
       _isRefactoringFile[fileName] = true;
@@ -204,13 +204,8 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
 
     try {
       // --- 2. Gather all suggestions for the given file ---
-      final suggestionsForFile = suggestions
-          .where((s) => s['fileName'] == fileName)
-          .map((s) => s['suggestionText'] as String)
-          .toList();
-
-      if (suggestionsForFile.isEmpty) {
-        throw Exception("No suggestions found for this file.");
+      if (suggestionsToApply.isEmpty) {
+        throw Exception("No suggestions were selected to apply.");
       }
 
       // --- 3. Prepare the request for the new flow ---
@@ -227,7 +222,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
         "repo": parsedPr['repo'],
         "pull_number": parsedPr['pull_number'],
         "path": fileName,
-        "suggestions": suggestionsForFile,
+        "suggestions": suggestionsToApply,
         "language": _languageController.text.trim(),
       };
 
@@ -774,9 +769,16 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                     ),
                     // NEW: "Apply & Preview" Button
                     _isRefactoringFile[fileName] ?? false
-                        ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 3))
+                        ? Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                            child: const SizedBox(
+                              height: 24,
+                              width: 24,
+                              child: CircularProgressIndicator(strokeWidth: 3),
+                            ),
+                          )
                         : ElevatedButton.icon(
-                            onPressed: () => _handleRefactorRequest(fileName),
+                            onPressed: () => _showSuggestionSelectionDialog(fileName),
                             icon: const Icon(Icons.auto_awesome, size: 16),
                             label: const Text("Apply & Preview"),
                             style: ElevatedButton.styleFrom(
@@ -1030,5 +1032,193 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       originalController.dispose();
       refactoredController.dispose();
     });
+  }
+
+  // In _CodeReviewScreenState class
+
+  // In _CodeReviewScreenState class
+
+  Future<void> _showSuggestionSelectionDialog(String fileName) async {
+    final List<Map<String, dynamic>> suggestionsForFile = suggestions
+        .where((s) => s['fileName'] == fileName)
+        .map((s) => Map<String, dynamic>.from(s..['isSelected'] = true))
+        .toList();
+
+    final customSuggestionController = TextEditingController();
+
+    final List<Map<String, dynamic>>? finalSuggestions =
+        await showDialog<List<Map<String, dynamic>>>(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) {
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                void addCustomSuggestion() {
+                  final text = customSuggestionController.text.trim();
+                  if (text.isNotEmpty) {
+                    setDialogState(() {
+                      suggestionsForFile.add({
+                        'fileName': fileName,
+                        'suggestionText': text,
+                        'type': 'CUSTOM',
+                        'isSelected': true,
+                      });
+                      customSuggestionController.clear();
+                    });
+                  }
+                }
+
+                return AlertDialog(
+                  backgroundColor: Colors.grey[50],
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  titlePadding: const EdgeInsets.all(0),
+                  title: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(16),
+                        topRight: Radius.circular(16),
+                      ),
+                      border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.checklist_rtl, color: Colors.green),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            "Select Suggestions for: $fileName",
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  content: SizedBox(
+                    width: MediaQuery.of(context).size.width * 0.5,
+                    height: MediaQuery.of(context).size.height * 0.7,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 10),
+                            // decoration: BoxDecoration(
+                            //   color: Colors.white,
+                            //   borderRadius: BorderRadius.circular(8),
+                            //   border: Border.all(color: Colors.grey.shade300),
+                            // ),
+                            // Use ClipRRect to ensure the ListView respects the border radius
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: ListView.builder(
+                                padding: const EdgeInsets.all(8), // Add padding for the list itself
+                                itemCount: suggestionsForFile.length,
+                                itemBuilder: (context, index) {
+                                  final suggestion = suggestionsForFile[index];
+                                  // --- CHANGED: Replaced Card with a custom styled Container ---
+                                  return Container(
+                                    margin: const EdgeInsets.symmetric(vertical: 5.0),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.grey.shade200, width: 1),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.grey.withOpacity(0.1),
+                                          spreadRadius: 1,
+                                          blurRadius: 5,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    // NEW: Use a Column for a custom layout (Header + CheckboxListTile)
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        // NEW: Header section for the type badge
+                                        Padding(
+                                          padding: const EdgeInsets.only(left: 20, top: 8, bottom: 8),
+                                          child: _buildTypeBadge(suggestion['type']),
+                                        ),
+                                        const Divider(height: 1),
+                                        // CheckboxListTile for the main content
+                                        CheckboxListTile(
+                                          controlAffinity: ListTileControlAffinity.leading,
+                                          activeColor: Colors.blue,
+                                          value: suggestion['isSelected'],
+                                          dense: true,
+                                          onChanged: (bool? value) {
+                                            setDialogState(() {
+                                              suggestion['isSelected'] = value ?? false;
+                                            });
+                                          },
+                                          title: Text(suggestion['suggestionText']),
+                                          // Subtitle is no longer needed here
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: customSuggestionController,
+                                decoration: _inputDecoration('Add a custom suggestion', Icons.task_alt_rounded),
+
+                                onSubmitted: (_) => addCustomSuggestion(),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton.filled(
+                              icon: const Icon(Icons.add),
+                              onPressed: addCustomSuggestion,
+                              tooltip: 'Add Suggestion',
+                              style: IconButton.styleFrom(
+                                backgroundColor: Colors.blue,
+                                padding: const EdgeInsets.all(16),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  actionsPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.of(context).pop(null), child: const Text("Cancel")),
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text("Apply & Preview"),
+                      onPressed: () {
+                        final selected = suggestionsForFile.where((s) => s['isSelected']).toList();
+                        Navigator.of(context).pop(selected);
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        ).whenComplete(() {
+          customSuggestionController.dispose();
+        });
+
+    if (finalSuggestions != null && finalSuggestions.isNotEmpty) {
+      final suggestionTexts = finalSuggestions.map((s) => s['suggestionText'] as String).toList();
+      _handleRefactorRequest(fileName, suggestionTexts);
+    }
   }
 }

@@ -7,21 +7,18 @@ import parseDiff from "parse-diff";
 
 // --- Schemas ---
 
-// Schema for a single file's changes within the parsed diff
-// This schema is used for what you prepare to SEND to the LLM.
+// This schema is now for the LLM's INPUT, focusing on contextual diff content.
 const FileDiffSchema = z.object({
   filePath: z
     .string()
     .describe("Path of the file that was changed (e.g., 'src/index.js')."),
-  addedLines: z
-    .array(z.string())
-    .describe("Lines added in this file (without '+ ' prefix)."),
-  deletedLines: z
-    .array(z.string())
-    .describe("Lines deleted in this file (without '- ' prefix)."),
+  diffContent: z
+    .string()
+    .describe(
+      "The unified diff content for the file, including '+', '-', and context lines."
+    ),
 });
 
-// Define the IssueTypeEnum for consistency
 const IssueTypeEnum = z
   .enum([
     "SECURITY",
@@ -35,13 +32,10 @@ const IssueTypeEnum = z
   ])
   .describe("Type of the issue identified in the suggestion.");
 
-// Define the IssueTypeEnum for consistency
 const SeverityTypeEnum = z
   .enum(["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"])
   .describe("Type of the issue identified in the suggestion.");
 
-// Overall schema for the structured code review result that your FLOW RETURNS.
-// The LLM will only generate summary and suggestions.
 const CodeReviewResultSchema = z.object({
   summary: z
     .string()
@@ -61,18 +55,13 @@ const CodeReviewResultSchema = z.object({
           .describe(
             "Optional line number in the NEW file where the suggestion applies, if relevant."
           ),
-        // --- NEW FIELD FOR CHARTING ---
-        type: IssueTypeEnum.optional(), // Make type optional in case LLM misses it sometimes
-        // --- NEW FIELD FOR CHARTING ---
-        severity: SeverityTypeEnum.optional(), // Add severity for charting
+        type: IssueTypeEnum.optional(),
+        severity: SeverityTypeEnum.optional(),
       })
     )
     .describe(
       "An itemized list of specific suggestions for improvement with file names, optional line numbers, and type/severity."
     ),
-  // The 'parsedDiff' in the FINAL output of the flow is the raw content you fetched.
-  // It's not something the LLM generates; your flow adds it back.
-  // Keep it here as you had it in the output schema.
   parsedDiff: z
     .any()
     .describe(
@@ -105,7 +94,6 @@ export const prReviewFlow = ai.defineFlow(
           "Optional areas to focus on (e.g., 'security', 'performance')"
         ),
     }),
-    // The outputSchema here applies to the *overall flow return*.
     outputSchema: CodeReviewResultSchema,
   },
   async (input) => {
@@ -123,78 +111,57 @@ export const prReviewFlow = ai.defineFlow(
         );
       }
 
-      // 2. Parse the raw diff content into your desired structured format
+      // 2. Parse the raw diff into a contextual format for the LLM
       const files = parseDiff(rawDiffContent);
-      const parsedDiffForLLM = files.map((file) => {
-        const filePath = file.to || file.from || "unknown";
+      const parsedDiffForLLM = files
+        .map((file) => {
+          const filePath = file.to || file.from || "unknown";
 
-        const addedLines = [];
-        const deletedLines = [];
+          // Create a string that represents the diff chunks for better context
+          const diffContent = file.chunks
+            .map((chunk) => {
+              // Recreate the diff chunk view by joining all changes.
+              // This gives the LLM full context.
+              return chunk.changes.map((change) => change.content).join("\n");
+            })
+            .join("\n\n"); // Separate chunks with a blank line
 
-        if (file.chunks) {
-          file.chunks.forEach((chunk) => {
-            chunk.changes.forEach((change) => {
-              if (change.type === "add") {
-                addedLines.push(
-                  change.content.startsWith("+")
-                    ? change.content.substring(1)
-                    : change.content
-                );
-              } else if (change.type === "del") {
-                deletedLines.push(
-                  change.content.startsWith("-")
-                    ? change.content.substring(1)
-                    : change.content
-                );
-              }
-            });
-          });
-        }
+          if (!diffContent.trim()) return null; // Skip files with no changes
+
+          return {
+            filePath,
+            diffContent,
+          };
+        })
+        .filter(Boolean); // Filter out any null entries (files with no changes)
+
+      if (parsedDiffForLLM.length === 0) {
         return {
-          filePath,
-          addedLines,
-          deletedLines,
+          summary: "No code changes found to review.",
+          suggestions: [],
+          parsedDiff: rawDiffContent,
+          message:
+            "The PR diff appears to be empty or contains no code changes.",
         };
-      });
+      }
 
-      // 3. Generate the prompt for the LLM
-      const prompt = ` You are an expert and meticulous code reviewer with deep knowledge of ${
+      // 3. Generate the updated prompt for the LLM
+      const prompt = `You are an expert ${
         input.language
-      }. Your role is to **analyze every single change in the provided code diff** and provide a **thorough, high-quality review**.
-    **  And please do not add any review if the code have'nt any issue**
+      } code reviewer. Your task is to analyze the provided code diff and identify potential issues.
 
-Your focus should include (but is not limited to):
-${
-  input.focusAreas ||
-  "- General best practices\n- Code correctness and logic errors\n- Security vulnerabilities\n- Performance pitfalls\n- Code style and maintainability"
-}
+🚨 ***CRITICAL INSTRUCTIONS:*** 🚨
 
----
+1.  **FOCUS ON ADDED CODE**: The diff for each file will be provided. Lines starting with \`+\` are additions, lines with \`-\` are deletions. **Your review and suggestions must focus on the ADDED lines (\`+\`).** Do NOT suggest changes for deleted code (\`-\`). Use the surrounding code only for context.
+2.  **IGNORE NO-ISSUE FILES**: If a file's changes are correct and have no issues, do NOT mention it in your suggestions. Your output should only contain suggestions for files that need improvement.
+3.  **MANDATORY FIELDS**: For **every single suggestion**, you MUST provide a "type" and a "severity".
+4.  **ACCURATE LINE NUMBERS**: Line numbers must refer to the position in the NEW version of the file.
 
-🚨 ***STRICT INSTRUCTIONS:*** 🚨
-
-For **every single suggestion**, you MUST include both:
-- A valid "type" (from the allowed list)
-- A valid "severity" (from the allowed list)
-
-🧠 DO NOT skip or combine unrelated issues. Each issue must be listed as a separate suggestion with correct line number and context.
-
-📌 **Allowed 'type' values** (choose exactly one):
-- 'SECURITY' — insecure handling of user input, secrets, or system resources
-- 'PERFORMANCE' — inefficient operations, resource leaks, unnecessary computation
-- 'READABILITY' — hard-to-understand code, poor naming, unclear logic
-- 'BUG' — incorrect behavior, logical flaws, edge case failures
-- 'STYLE' — formatting, indentation, lint rule violations
-- 'BEST_PRACTICE' — non-idiomatic usage, poor architectural patterns
-- 'TYPO' — spelling or grammar errors
-- 'OTHER' — if it doesn’t fit any of the above types
+📌 **Allowed 'type' values**:
+- 'SECURITY', 'PERFORMANCE', 'READABILITY', 'BUG', 'STYLE', 'BEST_PRACTICE', 'TYPO', 'OTHER'
 
 📌 **Allowed 'severity' values**:
-- 'CRITICAL' — must-fix issues (crash/data loss/security breach)
-- 'HIGH' — serious risk or flaw needing quick attention
-- 'MEDIUM' — moderate importance; improves quality or robustness
-- 'LOW' — minor fix; good to have but not urgent
-- 'INFO' — observation, comment, or praise
+- 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO'
 
 ---
 
@@ -206,37 +173,35 @@ For **every single suggestion**, you MUST include both:
   "suggestions": [
     {
       "fileName": "path/to/file.js",
-      "suggestionText": "Precise, actionable feedback that a developer can understand and implement.",
+      "suggestionText": "Precise, actionable feedback for an added line.",
       "lineNumber": 123,
-      "type": "READABILITY", 
+      "type": "READABILITY",
       "severity": "MEDIUM"
     }
-  ],
-  "message": "Optional high-level note about the review, e.g., next steps or general feedback."
+  ]
 }
 \\\
 
 ---
 
 Here is the code diff to review:
-${rawDiffContent}
+${JSON.stringify(parsedDiffForLLM, null, 2)}
 
-🔍 Review each file and line carefully. Be critical, accurate, and helpful — this review will guide automated refactoring and real code updates. Do not make up line numbers or vague comments. If a change is correct and well-written, note that positively with an 'INFO'-level suggestion.
+🔍 Review the added code carefully.
+** Don't give review based on ** - **Deleted Content, u can use that as context but please focus on ** + ** lines as they are the actual code.**
+   Be critical, accurate, and helpful — this review will guide automated refactoring and real code updates. Do not make up line numbers or vague comments. If a change is correct and well-written, note that positively with an 'INFO'-level suggestion.
 
-You are expected to perform like a senior engineer reviewing code in a mission-critical system.
-;
-`;
+You are expected to perform like a senior engineer reviewing code in a mission-critical system.`;
+
       // 4. Send to LLM for review
       const aiResponse = await ai.generate({
         model: gemini20Flash,
         prompt,
         output: {
           format: "json",
-
           schema: z.object({
             summary: CodeReviewResultSchema.shape.summary,
             suggestions: CodeReviewResultSchema.shape.suggestions,
-            message: CodeReviewResultSchema.shape.message,
           }),
         },
       });
@@ -244,32 +209,24 @@ You are expected to perform like a senior engineer reviewing code in a mission-c
       const output = aiResponse.output;
 
       if (!output) {
-        throw new Error(
-          "Model returned null or malformed output after Genkit's validation."
-        );
+        throw new Error("Model returned null or malformed output.");
       }
 
-      // 5. Return the structured results, adding back the rawDiffContent
+      // 5. Return the structured results
       return {
         summary: output.summary,
         suggestions: output.suggestions,
-        parsedDiff: rawDiffContent, // This is added back by your flow, not generated by the LLM
-        message: output.message || "PR review completed successfully.",
+        parsedDiff: rawDiffContent,
+        message: "PR review completed successfully.",
       };
     } catch (error) {
       console.error("PR Review Flow Error:", error);
-      let errorMessage = "An unexpected error occurred during PR review.";
-      if (error.message && error.message.includes("Schema validation failed")) {
-        errorMessage = ` Schema validation failed for AI model output. This often means the AI did not return the expected JSON format. Details: ${error.message}`;
-      } else {
-        errorMessage = `PR review failed: ${error.message}`;
-      }
+      const errorMessage = `PR review failed: ${error.message}`;
 
-      // Ensure the error return matches the overall CodeReviewResultSchema for consistency
       return {
-        summary: `Review failed: ${errorMessage}`,
+        summary: "Review failed.",
         suggestions: [],
-        parsedDiff: "[]", // Return empty string or appropriate value for raw diff on failure
+        parsedDiff: "[]",
         message: errorMessage,
       };
     }
