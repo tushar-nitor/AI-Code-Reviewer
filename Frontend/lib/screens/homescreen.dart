@@ -1,9 +1,12 @@
 // ignore_for_file: use_build_context_synchronously
 
 import 'dart:convert';
+import 'package:ai_code_reviewer/widgets/code_rules_dialog.dart';
+import 'package:ai_code_reviewer/widgets/gradient_button.dart';
 import 'package:ai_code_reviewer/widgets/pr_charts.dart';
 import 'package:ai_code_reviewer/widgets/pr_diff_viewer.dart';
 import 'package:ai_code_reviewer/widgets/refactor_diff_viewer.dart';
+import 'package:ai_code_reviewer/widgets/text_to_speech_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_code_editor/flutter_code_editor.dart';
@@ -31,6 +34,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
 
   String _originalCodeForDiff = "";
   String _refactoredCodeForDiff = "";
+  String _summarySuggestions = "";
 
   static final Map<String, Color> typeColors = {
     'SECURITY': Colors.red.shade700,
@@ -83,7 +87,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       return;
     }
 
-    if (_selectedInputType == ReviewInputType.pasteCode && _codeController.text.trim() != '// Enter your code\n') {
+    if (_selectedInputType == ReviewInputType.pasteCode && _codeController.text.trim().isEmpty) {
       setState(() {
         error = "Please paste the code to review.";
         isLoading = false; // Stop loading on validation failure
@@ -149,6 +153,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
 
         setState(() {
           summary = result['summary'] as String?;
+          _summarySuggestions = (result['suggestions_summary'] as String?) ?? "";
           if (_selectedInputType == ReviewInputType.pasteCode) {
             suggestions =
                 (result['suggestions'] as List?)
@@ -324,8 +329,8 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
           height: MediaQuery.sizeOf(context).height,
           padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 10),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Colors.white, const Color.fromARGB(255, 222, 236, 246)],
+            gradient: const LinearGradient(
+              colors: [Colors.white, Color.fromARGB(255, 222, 236, 246)],
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
             ),
@@ -341,7 +346,18 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
               ),
 
               const SizedBox(height: 40),
+
               // --- End Radio Button Row ---
+              // GradientAiButton(
+              //   onPressed: () {
+              //     FloatingAudioPlayer.show(
+              //       context,
+              //       textToSpeak:
+              //           "It looks like your code is designed to swap two variables. To improve it, I recommend the following: first, use simultaneous assignment. This is more concise and Pythonic. Next, if you plan to take user inputs, consider adding input validation to prevent errors. Finally, adding comments to explain each section of the code would improve readability.",
+              //     );
+              //   },
+              //   text: ('Expert Advice'),
+              // ),
 
               // Common inputs for both types
               TextField(
@@ -368,7 +384,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                   SizedBox(
                     width: 200,
                     child: RadioListTile<ReviewInputType>.adaptive(
-                      title: const SelectableText('Paste Code'),
+                      title: const SelectableText('Code'),
                       value: ReviewInputType.pasteCode,
                       groupValue: _selectedInputType,
                       onChanged: (ReviewInputType? value) {
@@ -401,7 +417,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
               // Conditionally display Code Editor or PR URL Field based on selected type
               if (_selectedInputType == ReviewInputType.pasteCode)
                 Container(
-                  height: 300,
+                  height: 320,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.blue),
@@ -415,9 +431,9 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                       child: CodeField(
                         controller: _codeController,
                         textStyle: const TextStyle(fontFamily: 'SourceCodePro'),
-                        expands: false,
-                        minLines: 14,
                         maxLines: null,
+                        minLines: null,
+                        readOnly: false,
                       ),
                     ),
                   ),
@@ -490,7 +506,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                               children: [
                                 // Code Editor Container
                                 Container(
-                                  height: 500,
+                                  height: 520,
                                   padding: const EdgeInsets.all(5),
                                   decoration: BoxDecoration(
                                     border: Border.all(color: Colors.blue),
@@ -676,7 +692,75 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                     borderRadius: BorderRadius.circular(10), // fixed: use BorderRadius.circular
                   ),
                 ),
+              )
+            else if (text == "Summary" && _selectedInputType == ReviewInputType.pasteCode)
+              ElevatedButton.icon(
+                onPressed: () async {
+                  showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      // The AlertDialog now contains our stateful content widget.
+                      return AlertDialog(
+                        title: Text('Coding Standards for ${_languageController.text}'),
+                        // The content is wide enough to avoid overflow and is scrollable internally.
+                        content: SizedBox(
+                          width: double.maxFinite,
+                          child: StandardsDialogContent(language: _languageController.text),
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      );
+                    },
+                  );
+                },
+                icon: const Icon(Icons.comment),
+                label: const Text("Show Best Practices", style: TextStyle(color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  iconColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10), // fixed: use BorderRadius.circular
+                  ),
+                ),
               ),
+            if (text == "Summary" && _selectedInputType == ReviewInputType.pasteCode)
+              GradientAiButton(
+                onPressed: () {
+                  FloatingAudioPlayer.show(context, textToSpeak: _summarySuggestions);
+                },
+                text: ('Expert Advice'),
+              ),
+
+            //               void _showStandardsDialog(BuildContext context, String language) {
+            //   showDialog(
+            //     context: context,
+            //     builder: (BuildContext context) {
+            //       // The AlertDialog now contains our stateful content widget.
+            //       return AlertDialog(
+            //         title: Text('Coding Standards for $language'),
+            //         // The content is wide enough to avoid overflow and is scrollable internally.
+            //         content: SizedBox(
+            //           width: double.maxFinite,
+            //           child: _StandardsDialogContent(language: language),
+            //         ),
+            //         actions: [
+            //           TextButton(
+            //             onPressed: () {
+            //               Navigator.of(context).pop();
+            //             },
+            //             child: const Text('Close'),
+            //           ),
+            //         ],
+            //       );
+            //     },
+            //   );
+            // }
           ],
         ),
         const Divider(color: Colors.blue),
@@ -769,24 +853,24 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                     ),
                     // NEW: "Apply & Preview" Button
                     _isRefactoringFile[fileName] ?? false
-                        ? Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                            child: const SizedBox(
-                              height: 24,
-                              width: 24,
-                              child: CircularProgressIndicator(strokeWidth: 3),
-                            ),
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 8.0),
+                            child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 3)),
                           )
-                        : ElevatedButton.icon(
+                        : GradientAiButton(
                             onPressed: () => _showSuggestionSelectionDialog(fileName),
-                            icon: const Icon(Icons.auto_awesome, size: 16),
-                            label: const Text("Apply & Preview"),
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              backgroundColor: const Color.fromARGB(255, 62, 164, 65),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
+                            text: "Apply & Preview",
                           ),
+                    //  ElevatedButton.icon(
+                    //     onPressed: () => _showSuggestionSelectionDialog(fileName),
+                    //     icon: const Icon(Icons.auto_awesome, size: 16),
+                    //     label: const Text("Apply & Preview"),
+                    //     style: ElevatedButton.styleFrom(
+                    //       foregroundColor: Colors.white,
+                    //       backgroundColor: const Color.fromARGB(255, 62, 164, 65),
+                    //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    //     ),
+                    //   ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -1193,20 +1277,27 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                   actionsPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   actions: [
                     TextButton(onPressed: () => Navigator.of(context).pop(null), child: const Text("Cancel")),
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.auto_awesome),
-                      label: const Text("Apply & Preview"),
+                    GradientAiButton(
                       onPressed: () {
                         final selected = suggestionsForFile.where((s) => s['isSelected']).toList();
                         Navigator.of(context).pop(selected);
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
+                      text: "Apply & Preview",
                     ),
+                    // ElevatedButton.icon(
+                    //   icon: const Icon(Icons.auto_awesome),
+                    //   label: const Text("Apply & Preview"),
+                    //   onPressed: () {
+                    //     final selected = suggestionsForFile.where((s) => s['isSelected']).toList();
+                    //     Navigator.of(context).pop(selected);
+                    //   },
+                    //   style: ElevatedButton.styleFrom(
+                    //     backgroundColor: Colors.green,
+                    //     foregroundColor: Colors.white,
+                    //     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    //     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    //   ),
+                    // ),
                   ],
                 );
               },

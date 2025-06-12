@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'dart:math';
 
 class PRChartsWidget extends StatefulWidget {
   final List<Map<String, dynamic>> suggestions;
@@ -17,6 +18,7 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
   late Map<String, int> _commentsPerFile;
   late Map<String, int> _severityCounts;
   late List<MapEntry<String, int>> _sortedTopFiles; // Holds top files for the bar chart
+  int? touchedIndex; // For pie chart touch interaction
 
   @override
   void initState() {
@@ -80,7 +82,7 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
           color: Colors.grey.shade200,
           value: 1,
           title: 'No issue types',
-          radius: 75, // Adjusted size
+          radius: 80,
           titleStyle: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.bold,
@@ -91,18 +93,93 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
     }
 
     double total = _issueTypeCounts.values.fold(0, (sum, count) => sum + count);
+    final List<PieChartSectionData> sections = [];
+    int index = 0;
 
-    return _issueTypeCounts.entries.map((entry) {
+    _issueTypeCounts.entries.forEach((entry) {
+      final isTouched = index == touchedIndex;
+      final double radius = isTouched ? 90.0 : 80.0;
       final double percentage = (entry.value / total) * 100;
-      return PieChartSectionData(
-        color: typeColors[entry.key] ?? Colors.black,
-        value: entry.value.toDouble(),
-        title: '${entry.key}\n(${percentage.toStringAsFixed(1)}%)',
-        radius: 110, // Adjusted size
-        titleStyle: const TextStyle(fontSize: 10, color: Colors.white),
-        titlePositionPercentageOffset: 0.55, // Keep or slightly increase if titles overlap
+
+      // Badge widget for labels outside the chart
+      final badge = _ChartBadge(
+        '${entry.key}',
+        value: percentage,
+        borderColor: typeColors[entry.key],
+        textColor: Theme.of(context).textTheme.bodyLarge?.color,
       );
-    }).toList();
+
+      sections.add(
+        PieChartSectionData(
+          color: typeColors[entry.key] ?? Colors.black,
+          value: entry.value.toDouble(),
+          title: '', // We use the badge widget instead of the title
+          radius: radius,
+          badgeWidget: percentage < 4 ? null : badge, // Hide badge for small sections
+          badgePositionPercentageOffset: 1.2,
+        ),
+      );
+      index++;
+    });
+    return sections;
+  }
+
+  List<PieChartSectionData> _getSeverityPieChartSections(BuildContext context) {
+    final Map<String, Color> severityColors = {
+      'CRITICAL': Colors.red.shade900,
+      'HIGH': Colors.red.shade600,
+      'MEDIUM': Colors.orange.shade600,
+      'LOW': Colors.yellow.shade600,
+      'INFO': Colors.green.shade600,
+      'UNKNOWN': Colors.grey.shade400,
+    };
+
+    if (_severityCounts.isEmpty || (_severityCounts.length == 1 && _severityCounts.containsKey('UNKNOWN'))) {
+      return [
+        PieChartSectionData(
+          color: Colors.grey.shade200,
+          value: 1,
+          title: 'No severity data',
+          radius: 70,
+          titleStyle: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+        ),
+      ];
+    }
+
+    double total = _severityCounts.values.fold(0, (sum, count) => sum + count);
+    final List<PieChartSectionData> sections = [];
+    int index = 0;
+
+    _severityCounts.entries.forEach((entry) {
+      final isTouched = index == touchedIndex;
+      final double radius = isTouched ? 80.0 : 70.0;
+      final double percentage = (entry.value / total) * 100;
+
+      final badge = _ChartBadge(
+        '${entry.key}',
+        value: percentage,
+        borderColor: severityColors[entry.key],
+        textColor: Theme.of(context).textTheme.bodyLarge?.color,
+      );
+
+      sections.add(
+        PieChartSectionData(
+          color: severityColors[entry.key] ?? Colors.black,
+          value: entry.value.toDouble(),
+          title: '', // Use badge widget instead
+          radius: radius,
+          badgeWidget: percentage < 4 ? null : badge, // Hide badge for small sections
+          badgePositionPercentageOffset: 1.15,
+        ),
+      );
+      index++;
+    });
+
+    return sections;
   }
 
   List<BarChartGroupData> _getCommentsPerFileBarGroups() {
@@ -126,53 +203,6 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
     }).toList();
   }
 
-  List<PieChartSectionData> _getSeverityPieChartSections(BuildContext context) {
-    final Map<String, Color> severityColors = {
-      'CRITICAL': Colors.red.shade900,
-      'HIGH': Colors.red.shade600,
-      'MEDIUM': Colors.orange.shade600,
-      'LOW': Colors.yellow.shade600,
-      'INFO': Colors.green.shade600,
-      'UNKNOWN': Colors.grey.shade400,
-    };
-
-    if (_severityCounts.isEmpty ||
-        (_severityCounts.length == 1 &&
-            _severityCounts.containsKey('UNKNOWN') &&
-            _severityCounts['UNKNOWN'] == _commentsPerFile.values.fold(0, (sum, count) => sum + count))) {
-      return [
-        PieChartSectionData(
-          color: Colors.grey.shade200,
-          value: 1,
-          title: 'No severity data',
-          radius: 75, // Adjusted size
-          titleStyle: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onSurface,
-          ),
-        ),
-      ];
-    }
-
-    double total = _severityCounts.values.fold(0, (sum, count) => sum + count);
-
-    return _severityCounts.entries
-        .map((entry) {
-          final double percentage = (entry.value / total) * 100;
-          return PieChartSectionData(
-            color: severityColors[entry.key] ?? Colors.black,
-            value: entry.value.toDouble(),
-            title: '${entry.key}\n(${percentage.toStringAsFixed(1)}%)',
-            radius: 75, // Adjusted size
-            titleStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white),
-            titlePositionPercentageOffset: 0.55,
-          );
-        })
-        .whereType<PieChartSectionData>()
-        .toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     if (widget.suggestions.isEmpty) {
@@ -191,14 +221,26 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
               const Text('Issue Type Distribution', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               SizedBox(
-                height: 250, // Increased height for labels
-                width: useRowLayout ? screenWidth * 0.45 : double.infinity, // Adjusted width in row
+                height: 320, // Increased height for labels
+                width: useRowLayout ? screenWidth * 0.45 : double.infinity,
                 child: PieChart(
                   PieChartData(
                     sections: _getIssueTypePieChartSections(context),
                     sectionsSpace: 2,
-                    centerSpaceRadius: 0, // Adjusted size
-                    pieTouchData: PieTouchData(enabled: true),
+                    centerSpaceRadius: 40, // Make it a donut chart
+                    pieTouchData: PieTouchData(
+                      touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                        setState(() {
+                          if (!event.isInterestedForInteractions ||
+                              pieTouchResponse == null ||
+                              pieTouchResponse.touchedSection == null) {
+                            touchedIndex = -1;
+                            return;
+                          }
+                          touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                        });
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -213,8 +255,8 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
               const Text('Top Files by Comments', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               SizedBox(
-                height: 250, // Consistent height
-                width: useRowLayout ? screenWidth * 0.45 : double.infinity, // Adjusted width in row
+                height: 320, // Consistent height
+                width: useRowLayout ? screenWidth * 0.45 : double.infinity,
                 child: BarChart(
                   BarChartData(
                     barGroups: _getCommentsPerFileBarGroups(),
@@ -236,12 +278,12 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
                               meta: meta,
                               space: 4,
                               child: Text(
-                                shortFileName,
-                                style: const TextStyle(fontSize: 8, overflow: TextOverflow.ellipsis),
+                                shortFileName.length > 15 ? '${shortFileName.substring(0, 12)}...' : shortFileName,
+                                style: const TextStyle(fontSize: 9),
                               ),
                             );
                           },
-                          reservedSize: 80, // Increased reserved size for rotated text
+                          reservedSize: 32,
                         ),
                       ),
                     ),
@@ -251,9 +293,9 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
                       enabled: true,
                       touchTooltipData: BarTouchTooltipData(
                         getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                          // final filePath = _sortedTopFiles[group.x.toInt()].key;
+                          final filePath = _sortedTopFiles[group.x.toInt()].key;
                           return BarTooltipItem(
-                            '${rod.toY.toInt()} comments', // FIX: Added filePath back
+                            '${filePath.split('/').last}\n${rod.toY.toInt()} comments',
                             const TextStyle(color: Colors.white, fontSize: 10),
                           );
                         },
@@ -274,13 +316,25 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
               const Text('Issue Severity Distribution', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 10),
               SizedBox(
-                height: 250, // Consistent height
+                height: 320, // Increased height for labels
                 child: PieChart(
                   PieChartData(
                     sections: _getSeverityPieChartSections(context),
                     sectionsSpace: 2,
-                    centerSpaceRadius: 60, // Adjusted size
-                    pieTouchData: PieTouchData(enabled: true),
+                    centerSpaceRadius: 60,
+                    pieTouchData: PieTouchData(
+                      touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                        setState(() {
+                          if (!event.isInterestedForInteractions ||
+                              pieTouchResponse == null ||
+                              pieTouchResponse.touchedSection == null) {
+                            touchedIndex = -1;
+                            return;
+                          }
+                          touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                        });
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -290,7 +344,7 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
 
     return Container(
       padding: const EdgeInsets.all(16.0),
-      margin: EdgeInsets.only(bottom: 20),
+      margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
         border: Border.all(width: 1, color: Colors.grey.shade300),
@@ -299,37 +353,60 @@ class _PRChartsWidgetState extends State<PRChartsWidget> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Responsive layout for Issue Type and Comments Per File charts
           if (useRowLayout && issueTypeChartWidget is! SizedBox && commentsPerFileChartWidget is! SizedBox)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              crossAxisAlignment: CrossAxisAlignment.start, // Align top of charts
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(child: issueTypeChartWidget),
-                const SizedBox(width: 30), // Increased space between charts
+                const SizedBox(width: 30),
                 Expanded(child: commentsPerFileChartWidget),
               ],
             )
           else
-            // Column layout
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 issueTypeChartWidget,
                 if (issueTypeChartWidget is! SizedBox && commentsPerFileChartWidget is! SizedBox)
-                  const SizedBox(height: 30), // Consistent spacing
+                  const SizedBox(height: 30),
                 commentsPerFileChartWidget,
               ],
             ),
-
-          // Issue Severity Distribution (always in a column after others)
           if (severityChartWidget is! SizedBox) ...[
             if ((issueTypeChartWidget is! SizedBox || commentsPerFileChartWidget is! SizedBox))
-              const SizedBox(height: 30), // Add space only if previous charts are present
-
+              const SizedBox(height: 30),
             severityChartWidget,
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A custom widget for pie chart badges to prevent clutter.
+class _ChartBadge extends StatelessWidget {
+  const _ChartBadge(this.label, {required this.value, this.borderColor, this.textColor});
+
+  final String label;
+  final double value;
+  final Color? borderColor;
+  final Color? textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: borderColor ?? Colors.grey, width: 1.5),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 3, offset: const Offset(1, 1))],
+      ),
+      child: Text(
+        '$label (${value.toStringAsFixed(0)}%)',
+        textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: textColor ?? Colors.black),
       ),
     );
   }
