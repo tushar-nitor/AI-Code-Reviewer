@@ -3,6 +3,7 @@ import { codeReviewFlow } from "./flows/codeReviewsFlow.js";
 import { prReviewFlow } from "./flows/prReviewFlow.js";
 import { postPRCommentsFlow } from "./flows/prCommentFlow.js";
 import { refactorFileFlow } from "./flows/refactorFileFlow.js";
+import { codingStandardsFlow } from "./flows/codingStandards.js";
 
 import {
   fetchPRDiffTool,
@@ -16,7 +17,13 @@ startFlowServer({
   cors: {
     origin: "*",
   },
-  flows: [codeReviewFlow, prReviewFlow, postPRCommentsFlow, refactorFileFlow],
+  flows: [
+    codeReviewFlow,
+    prReviewFlow,
+    postPRCommentsFlow,
+    refactorFileFlow,
+    codingStandardsFlow,
+  ],
   tools: [
     fetchPRDiffTool,
     postGitHubPRCommentTool,

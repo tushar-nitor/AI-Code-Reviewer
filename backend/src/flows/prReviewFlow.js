@@ -187,9 +187,9 @@ export const prReviewFlow = ai.defineFlow(
 Here is the code diff to review:
 ${JSON.stringify(parsedDiffForLLM, null, 2)}
 
+** Don't give review based on ** - **Deleted Content, you can use that as context but please focus on ** + ** lines as they are the actual code.**
 🔍 Review the added code carefully.
-** Don't give review based on ** - **Deleted Content, u can use that as context but please focus on ** + ** lines as they are the actual code.**
-   Be critical, accurate, and helpful — this review will guide automated refactoring and real code updates. Do not make up line numbers or vague comments. If a change is correct and well-written, note that positively with an 'INFO'-level suggestion.
+Be critical, accurate, and helpful — this review will guide automated refactoring and real code updates. Do not make up line numbers or vague comments. If a change is correct and well-written, note that positively with an 'INFO'-level suggestion.
 
 You are expected to perform like a senior engineer reviewing code in a mission-critical system.`;
 
