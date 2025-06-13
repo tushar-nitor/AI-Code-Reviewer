@@ -19,6 +19,7 @@
     "@genkit-ai/vertexai": "^1.0.5",
     "@octokit/rest": "^20.0.2",
     "data-urls": "^5.0.0",
+    "diff": "^8.0.2",
     "dotenv": "^16.5.0",
     "genkit": "^1.0.5",
     "node-fetch": "^3.3.2",
