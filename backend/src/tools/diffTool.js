@@ -9,7 +9,7 @@ import * as Diff from "diff"; // Use the 'diff' package
 
 export const createDiffTool = ai.defineTool(
   {
-    name: "createDiff",
+    name: "createDiffTool",
     description:
       "Compares two blocks of text and creates a unified diff string.",
     inputSchema: z.object({

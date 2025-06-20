@@ -6,7 +6,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node --watch app.js",
-    "build": "tsc"
+    "build": "tsc",
+    "dev": "nodemon src/app.js",
+    "genkit:start": "npx genkit start -o -- ",
+    "genkit:dev": "npx genkit start -o -- npm run dev"
   },
   "keywords": [],
   "author": "",
@@ -27,6 +30,7 @@
   },
   "devDependencies": {
     "@types/data-urls": "^3.0.4",
-    "genkit-cli": "^1.0.5"
+    "genkit-cli": "^1.0.5",
+    "nodemon": "^3.1.10"
   }
 }

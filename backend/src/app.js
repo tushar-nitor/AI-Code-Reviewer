@@ -4,6 +4,7 @@ import { prReviewFlow } from "./flows/prReviewFlow.js";
 import { postPRCommentsFlow } from "./flows/prCommentFlow.js";
 import { refactorFileFlow } from "./flows/refactorFileFlow.js";
 import { codingStandardsFlow } from "./flows/codingStandards.js";
+import { createDiffTool } from "./tools/diffTool.js";
 
 import {
   fetchPRDiffTool,
@@ -27,8 +28,10 @@ startFlowServer({
   tools: [
     fetchPRDiffTool,
     postGitHubPRCommentTool,
+    getPRInfoTool,
     refactorCodeTool,
     fetchFileContentTool,
-    getPRInfoTool,
+    createDiffTool,
   ],
+  logLevel: "debug",
 });

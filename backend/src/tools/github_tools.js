@@ -1,14 +1,53 @@
 // tools/github_tools.js
-import { ai } from "../ai.js"; // Assuming your ai instance is in ai.js
+import { ai } from "../ai.js";
 import { z } from "genkit";
-import { Octokit } from "@octokit/rest";
-import { gemini20Flash } from "@genkit-ai/googleai";
+import { Octokit } from "@octokit/rest"; // Correct import for Octokit class
+// gemini20Flash import is not needed in a tools file, it belongs where the model is used (e.g., in prompts or flows)
+import { gemini20Flash } from "@genkit-ai/googleai"; // Remove this line
 
-// Initialize Octokit with your GitHub Token from environment variables
-// IMPORTANT: Ensure GITHUB_TOKEN is set securely in your deployment environment
-const octokit = new Octokit({
-  auth: process.env.GITHUB_TOKEN,
-});
+// --- DEBUGGING OCTOKIT INITIALIZATION ---
+let octokit; // Declare with 'let' to allow re-assignment in case of error handling
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // Get token from environment
+
+console.log("Loading github_tools.js module.");
+
+if (!GITHUB_TOKEN) {
+  console.error(
+    "CRITICAL ERROR: GITHUB_TOKEN environment variable is NOT SET. GitHub tools will fail."
+  );
+  // Consider throwing an error here or returning a dummy octokit if you want to avoid crashing startup
+  // For now, we'll let the tools' try/catch handle runtime failures.
+} else {
+  try {
+    octokit = new Octokit({
+      auth: GITHUB_TOKEN,
+    });
+    console.log("Octokit instance successfully initialized.");
+    console.log("  - octokit.pulls exists:", !!octokit.pulls);
+    console.log(
+      "  - octokit.pulls.get exists:",
+      typeof octokit.pulls?.get === "function"
+    );
+    console.log("  - octokit.repos exists:", !!octokit.repos);
+    console.log(
+      "  - octokit.repos.getContent exists:",
+      typeof octokit.repos?.getContent === "function"
+    );
+    console.log("  - octokit.rest.issues exists:", !!octokit.rest?.issues);
+    console.log(
+      "  - octokit.rest.issues.createComment exists:",
+      typeof octokit.rest?.issues?.createComment === "function"
+    );
+  } catch (initError) {
+    console.error(
+      "CRITICAL ERROR: Failed to initialize Octokit:",
+      initError.message
+    );
+    // Set octokit to null or undefined to ensure subsequent tool calls fail gracefully
+    octokit = null;
+  }
+}
+// --- END DEBUGGING OCTOKIT INITIALIZATION ---
 
 /**
  * Genkit Tool to fetch the diff of a GitHub Pull Request.
@@ -31,7 +70,16 @@ export const fetchPRDiffTool = ai.defineTool(
       .describe("The diff content of the pull request as a string."),
   },
   async ({ owner, repo, pull_number }) => {
+    // Add check if octokit is valid before proceeding
+    if (!octokit || typeof octokit.pulls?.get !== "function") {
+      const msg = `Octokit or its 'pulls.get' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
+      console.error(`[fetchPRDiffTool] ${msg}`);
+      throw new Error(msg); // Throw specific error to be caught by Genkit
+    }
     try {
+      console.log(
+        `[fetchPRDiffTool] Attempting to fetch PR info for: ${owner}/${repo} Pull #${pull_number}`
+      );
       const response = await octokit.pulls.get({
         owner,
         repo,
@@ -40,11 +88,10 @@ export const fetchPRDiffTool = ai.defineTool(
           format: "diff", // Request the diff format
         },
       });
-      // Octokit's response.data for diffs is typically a string, but types might show 'unknown'
       return response.data;
     } catch (error) {
       console.error(
-        `Failed to fetch PR diff for ${owner}/${repo}#${pull_number}:`,
+        `[fetchPRDiffTool] Failed to fetch PR diff for ${owner}/${repo}#${pull_number}:`,
         error
       );
       throw new Error(`Failed to fetch PR diff: ${error.message}`);
@@ -71,6 +118,12 @@ export const postGitHubPRCommentTool = ai.defineTool(
     }),
   },
   async ({ owner, repo, pull_number, commentBody }) => {
+    // Add check if octokit is valid before proceeding
+    if (!octokit || typeof octokit.rest?.issues?.createComment !== "function") {
+      const msg = `Octokit or its 'rest.issues.createComment' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
+      console.error(`[postGitHubPRCommentTool] ${msg}`);
+      throw new Error(msg);
+    }
     try {
       // GitHub API uses 'issues.createComment' for PR comments too
       const response = await octokit.rest.issues.createComment({
@@ -86,7 +139,7 @@ export const postGitHubPRCommentTool = ai.defineTool(
       };
     } catch (error) {
       console.error(
-        `Error posting comment to PR ${owner}/${repo}#${pull_number}:`,
+        `[postGitHubPRCommentTool] Error posting comment to PR ${owner}/${repo}#${pull_number}:`,
         error
       );
       return {
@@ -98,14 +151,19 @@ export const postGitHubPRCommentTool = ai.defineTool(
 );
 
 // --- NEW: Tool to get PR Info, including the head SHA ---
+
 export const getPRInfoTool = ai.defineTool(
   {
     name: "getPRInfo",
     description:
       "Fetches details of a specific GitHub Pull Request, including the head SHA of the source branch.",
     inputSchema: z.object({
-      owner: z.string().describe("Repository owner"),
-      repo: z.string().describe("Repository name"),
+      owner: z
+        .string()
+        .describe("The owner of the repository (e.g., 'octocat')."),
+      repo: z
+        .string()
+        .describe("The name of the repository (e.g., 'Spoon-Knife')."),
       pull_number: z.number().describe("The pull request number."),
     }),
     outputSchema: z.object({
@@ -115,36 +173,68 @@ export const getPRInfoTool = ai.defineTool(
     }),
   },
   async ({ owner, repo, pull_number }) => {
+    // Add check if octokit is valid before proceeding
+    if (!octokit || typeof octokit.pulls?.get !== "function") {
+      const msg = `Octokit or its 'pulls.get' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
+      console.error(`[getPRInfoTool] ${msg}`);
+      throw new Error(msg);
+    }
     try {
+      console.log(
+        `[getPRInfoTool] Attempting to fetch PR info for: ${owner}/${repo} Pull #${pull_number}`
+      );
       const response = await octokit.pulls.get({
         owner,
         repo,
         pull_number,
       });
 
-      // The response object contains the full details of the PR.
-      // We only need the SHA of the head of the source branch.
-      const head_sha = response.data.head.sha;
-      if (!head_sha) {
-        throw new Error("Head SHA not found in PR response.");
+      console.log(
+        `[getPRInfoTool] Raw GitHub API response.data keys: ${Object.keys(
+          response.data
+        ).join(", ")}`
+      );
+      if (response.data.head) {
+        console.log(
+          `[getPRInfoTool] Raw GitHub API response.data.head keys: ${Object.keys(
+            response.data.head
+          ).join(", ")}`
+        );
+      } else {
+        console.log(
+          `[getPRInfoTool] WARNING: response.data.head is missing for ${owner}/${repo}#${pull_number}`
+        );
       }
 
+      const head_sha = response.data.head?.sha; // Use optional chaining for safety
+
+      if (!head_sha) {
+        const msg = `Head SHA not found or is empty for ${owner}/${repo}#${pull_number}. Full head data: ${JSON.stringify(
+          response.data.head || "N/A"
+        )}`;
+        console.error(`[getPRInfoTool] Error: ${msg}`);
+        throw new Error(msg);
+      }
+
+      console.log(
+        `[getPRInfoTool] Successfully retrieved head_sha: ${head_sha} for ${owner}/${repo}#${pull_number}`
+      );
       return { head_sha };
     } catch (error) {
       console.error(
-        `Failed to fetch PR info for ${owner}/${repo}#${pull_number}:`,
+        `[getPRInfoTool] FATAL ERROR fetching PR info for ${owner}/${repo}#${pull_number}:`,
         error
       );
-      throw new Error(`Failed to fetch PR info: ${error.message}`);
+      // Re-throw with more detail, including the original error message if available
+      throw new Error(`Failed to fetch PR info: ${error.message || error}`); // <--- This line is key
     }
   }
 );
 
 // --- Activate the File Content Tool ---
-// This tool is essential for the refactoring flow.
 export const fetchFileContentTool = ai.defineTool(
   {
-    name: "fetchFileContent",
+    name: "fetchFileContentTool",
     description:
       "Fetches the content of a specific file from a GitHub repository.",
     inputSchema: z.object({
@@ -161,21 +251,29 @@ export const fetchFileContentTool = ai.defineTool(
     outputSchema: z.string().describe("The content of the file."),
   },
   async ({ owner, repo, path, ref }) => {
+    // Add check if octokit is valid before proceeding
+    if (!octokit || typeof octokit.repos?.getContent !== "function") {
+      const msg = `Octokit or its 'repos.getContent' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
+      console.error(`[fetchFileContentTool] ${msg}`);
+      throw new Error(msg);
+    }
     try {
+      console.log(
+        `[fetchFileContentTool] Attempting to fetch file: ${owner}/${repo}/${path} at ref ${ref}`
+      );
       const response = await octokit.repos.getContent({
         owner,
         repo,
         path,
         ref,
       });
-      // Content is base64 encoded for files
       if (response.data && response.data.type === "file") {
         return Buffer.from(response.data.content, "base64").toString("utf8");
       }
       throw new Error("Path does not point to a file or content not found.");
     } catch (error) {
       console.error(
-        `Failed to fetch file content for ${owner}/${repo}/${path}:`,
+        `[fetchFileContentTool] Failed to fetch file content for ${owner}/${repo}/${path}:`,
         error
       );
       throw new Error(`Failed to fetch file content: ${error.message}`);
@@ -184,11 +282,9 @@ export const fetchFileContentTool = ai.defineTool(
 );
 
 // --- NEW: AI-Powered Refactoring Tool ---
-// This tool takes code and a suggestion, and uses an LLM to perform the refactor.
-
 export const refactorCodeTool = ai.defineTool(
   {
-    name: "refactorCode",
+    name: "refactorCodeTool",
     description:
       "Applies a list of suggested changes to a block of code and returns the single, final version of the refactored code.",
     inputSchema: z.object({
@@ -198,7 +294,6 @@ export const refactorCodeTool = ai.defineTool(
       fileContent: z
         .string()
         .describe("The entire original source code of the file."),
-      // It now accepts an array of strings
       suggestions: z
         .array(z.string())
         .describe(
@@ -213,7 +308,16 @@ export const refactorCodeTool = ai.defineTool(
       ),
   },
   async ({ fileName, fileContent, suggestions, language }) => {
-    // We format the list of suggestions for the prompt.
+    if (!ai || typeof ai.generate !== "function") {
+      // Check if 'ai' is available for LLM call
+      const msg = `AI generation client is not initialized for refactorCodeTool.`;
+      console.error(`[refactorCodeTool] ${msg}`);
+      throw new Error(msg);
+    }
+    console.error(
+      `[refactorCodeTool] Started ======================>>>>>>>>>>>>>>>>>`,
+      error
+    );
     const formattedSuggestions = suggestions
       .map((s, index) => `${index + 1}. ${s}`)
       .join("\n");
@@ -242,50 +346,23 @@ ${fileContent}
 ---
 
 Now, provide the complete and final source code after applying all the suggestions, including the specified \`// REFACTOR:\` comments.`;
-
-    const llmResponse = await ai.generate({
-      // For complex tasks like this, a more powerful model is recommended
-      model: gemini20Flash,
-      prompt: prompt,
-      // Increase temperature slightly to give the model more "creativity" in resolving suggestion conflicts
-      config: { temperature: 0.3 },
-    });
-
-    return llmResponse.text;
-  }
-);
-
-// You can add more tools here, like fetching individual file contents from a repo:
-/*
-export const fetchFileContentTool = ai.defineTool(
-  {
-    name: "fetchFileContent",
-    description: "Fetches the content of a specific file from a GitHub repository.",
-    inputSchema: z.object({
-      owner: z.string(),
-      repo: z.string(),
-      path: z.string().describe("Path to the file in the repository."),
-      ref: z.string().optional().describe("The name of the commit/branch/tag. Defaults to the default branch."),
-    }),
-    outputSchema: z.string().describe("The content of the file."),
-  },
-  async ({ owner, repo, path, ref }) => {
     try {
-      const response = await octokit.repos.getContent({
-        owner,
-        repo,
-        path,
-        ref,
+      const llmResponse = await ai.generate({
+        model: gemini20Flash, // This is explicitly defined here
+        prompt: prompt,
+        config: { temperature: 0.3 },
       });
-      // Content is base64 encoded for files
-      if (response.data && response.data.type === 'file') {
-        return Buffer.from(response.data.content, 'base64').toString('utf8');
+
+      if (!llmResponse.text) {
+        throw new Error("LLM response was empty or null.");
       }
-      throw new Error("Path does not point to a file or content not found.");
-    } catch (error) {
-      console.error(`Failed to fetch file content for ${owner}/${repo}/${path}:`, error);
-      throw new Error(`Failed to fetch file content: ${error.message}`);
+      return llmResponse.text;
+    } catch (llmError) {
+      console.error(
+        `[refactorCodeTool] LLM generation failed for ${fileName}:`,
+        llmError
+      );
+      throw new Error(`AI refactoring failed: ${llmError.message}`);
     }
   }
 );
-*/

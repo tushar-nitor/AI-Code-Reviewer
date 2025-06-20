@@ -1,34 +1,9 @@
 import { ai } from "../ai.js";
-import { z } from "genkit";
 import { gemini20Flash } from "@genkit-ai/googleai"; // or any other model
-
-// Define input schema (No changes here)
-const CodeReviewInputSchema = z.object({
-  code: z.string().describe("The code snippet to review"),
-  language: z.string().describe("Programming language of the code"),
-  focusAreas: z
-    .string()
-    .optional()
-    .describe(
-      "Specific areas to focus on (e.g., security, performance, readability)"
-    ),
-});
-
-const CodeReviewOutputSchema = z.object({
-  summary: z.string().describe("General feedback summary"),
-  suggestions: z.array(z.string()).describe("List of suggested improvements"),
-  // MODIFIED: Updated the description to be more specific
-  suggestions_summary: z
-    .string()
-    .describe(
-      "A conversational paragraph that first summarizes the code's purpose and then outlines the suggestions. Suitable for text-to-speech."
-    ),
-  correctedCode: z
-    .string()
-    .describe(
-      "The revised version of the input code with inline comments explaining changes"
-    ),
-});
+import {
+  CodeReviewInputSchema,
+  CodeReviewOutputSchema,
+} from "../schema/schema.js";
 
 export const codeReviewFlow = ai.defineFlow(
   {

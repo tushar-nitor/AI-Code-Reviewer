@@ -1,6 +1,7 @@
 // ignore_for_file: use_build_context_synchronously
 
 import 'dart:convert';
+import 'package:ai_code_reviewer/common/methods.dart';
 import 'package:ai_code_reviewer/widgets/code_rules_dialog.dart';
 import 'package:ai_code_reviewer/widgets/gradient_button.dart';
 import 'package:ai_code_reviewer/widgets/pr_charts.dart';
@@ -169,7 +170,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                         'fileName': s['fileName'] as String,
                         'suggestionText': s['suggestionText'] as String,
                         'type': s['type'],
-                        'severity': s['severity'],
+                        // 'severity': s['severity'],
                       },
                     )
                     .toList() ??
@@ -237,14 +238,18 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final result = data["result"];
+        if ((result['originalContent'] as String).isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result['message'])));
+          return;
+        }
 
         // --- 5. Store results for the modal and show it ---
         setState(() {
-          _originalCodeForDiff = result['originalContent'];
-          _refactoredCodeForDiff = result['refactoredContent'];
+          _originalCodeForDiff = extractCodeFromMarkdown(result['originalContent']);
+          _refactoredCodeForDiff = extractCodeFromMarkdown(result['refactoredContent']);
         });
 
-        _showRefactorDiffModal(fileName, result['diff']);
+        _showRefactorDiffModal(fileName, extractCodeFromMarkdown(result['diff']));
       } else {
         throw Exception('Server error: ${response.statusCode}. ${response.body}');
       }

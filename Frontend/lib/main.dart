@@ -18,7 +18,7 @@ class MyApp extends StatelessWidget {
         fontFamily: "Poppins",
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
       ),
-      home: CodeReviewScreen(),
+      home: const CodeReviewScreen(),
     );
   }
 }
