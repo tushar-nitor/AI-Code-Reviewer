@@ -20,7 +20,7 @@ import {
 } from "./tools/github_tools.js";
 
 const app = express();
-const PORT = process.env.PORT || 10000; // Must use 10000 for Render
+const PORT = process.env.PORT || 3333; // Must use 10000 for Render
 
 // **1. Define the health check route immediately.**
 // This makes it available as soon as the server starts.
