@@ -40,6 +40,7 @@ console.log("Starting Genkit...");
 // Note: The 'port' property is removed as app.listen() now controls this.
 startFlowServer({
   app: genkitRouter,
+  port: 4444,
   cors: {
     origin: "*",
   },
