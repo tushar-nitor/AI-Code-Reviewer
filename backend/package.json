@@ -26,7 +26,6 @@
     "data-urls": "^5.0.0",
     "diff": "^8.0.2",
     "dotenv": "^16.5.0",
-    "express": "^5.1.0",
     "genkit": "^1.0.5",
     "genkitx-pinecone": "^1.13.0",
     "install": "^0.13.0",
@@ -34,7 +33,8 @@
     "node-fetch": "^3.3.2",
     "npm": "^11.4.2",
     "parse-diff": "^0.11.1",
-    "pdf.js-extract": "^0.2.1"
+    "pdf.js-extract": "^0.2.1",
+    "express": "^4.21.1"
   },
   "devDependencies": {
     "@types/data-urls": "^3.0.4",
