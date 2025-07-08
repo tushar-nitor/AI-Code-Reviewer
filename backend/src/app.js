@@ -20,7 +20,7 @@ import {
 } from "./tools/github_tools.js";
 
 const app = express();
-const PORT = process.env.PORT || 3333; // Must use 10000 for Render
+const PORT = process.env.PORT || 4444; // Must use 10000 for Render
 
 // **1. Define the health check route immediately.**
 // This makes it available as soon as the server starts.
@@ -40,7 +40,7 @@ console.log("Starting Genkit...");
 // Note: The 'port' property is removed as app.listen() now controls this.
 startFlowServer({
   app: genkitRouter,
-  port: 4444,
+  port: 3333,
   cors: {
     origin: "*",
   },
