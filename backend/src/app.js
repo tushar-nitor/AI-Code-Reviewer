@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors"; // ✅ Import cors package
 import { startFlowServer } from "@genkit-ai/express";
 import { codeReviewFlow } from "./flows/codeReviewsFlow.js";
 import { prReviewFlow } from "./flows/prReviewFlow.js";
@@ -21,6 +22,7 @@ import {
 
 const app = express();
 const PORT = process.env.PORT || 4444; // Must use 10000 for Render
+app.use(cors()); // ✅ Add CORS globally
 
 // **1. Define the health check route immediately.**
 // This makes it available as soon as the server starts.
@@ -41,9 +43,9 @@ console.log("Starting Genkit...");
 startFlowServer({
   app: genkitRouter,
   port: 3333,
-  cors: {
-    origin: "*",
-  },
+  // cors: {
+  //   origin: "*",
+  // },
   flows: [
     codeReviewFlow,
     prReviewFlow,
