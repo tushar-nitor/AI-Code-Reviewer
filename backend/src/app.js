@@ -20,13 +20,26 @@ import {
 } from "./tools/github_tools.js";
 
 const app = express();
-// ✅ Health check route for Render
+const PORT = process.env.PORT || 10000; // Must use 10000 for Render
+
+// **1. Define the health check route immediately.**
+// This makes it available as soon as the server starts.
 app.get("/health", (req, res) => {
-  res.status(200).send("OK");
+  console.log("Health check called");
+  res.status(200).json({ status: "OK" });
 });
 
+const genkitRouter = express.Router();
+
+// **2. Mount the Genkit router to the main app.**
+app.use(genkitRouter);
+
+console.log("Starting Genkit...");
+
+// **3. Initialize Genkit on the separate router.**
+// Note: The 'port' property is removed as app.listen() now controls this.
 startFlowServer({
-  port: 3333,
+  app: genkitRouter,
   cors: {
     origin: "*",
   },
@@ -48,4 +61,10 @@ startFlowServer({
     createDiffTool,
     pineconeRetrievalTool,
   ],
+});
+
+// **4. Start the main Express server.**
+// This makes the /health endpoint live and able to respond to Render.
+app.listen(PORT, () => {
+  console.log(`🚀 Server is running and listening on port ${PORT}`);
 });
