@@ -29,6 +29,13 @@ export const SeverityTypeEnum = z
   .enum(["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"])
   .describe("Severity of the issue identified.");
 
+export const CodeReviewerInputSchema = z.object({
+  owner: z.string(),
+  repo: z.string(),
+  pull_number: z.number(),
+  language: z.string(),
+  focusAreas: z.string().optional(),
+});
 /**
  * The main schema for the final output of the code review process.
  */
@@ -51,8 +58,10 @@ export const CodeReviewResultSchema = z.object({
           .describe(
             "Optional line number in the NEW file where the suggestion applies, if relevant."
           ),
+
         type: IssueTypeEnum.optional(),
-        severity: SeverityTypeEnum.optional(),
+
+        // severity: SeverityTypeEnum.optional(),
       })
     )
     .describe("An itemized list of specific suggestions for improvement."),

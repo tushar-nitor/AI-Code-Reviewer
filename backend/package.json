@@ -26,6 +26,7 @@
     "data-urls": "^5.0.0",
     "diff": "^8.0.2",
     "dotenv": "^16.5.0",
+    "express": "^5.1.0",
     "genkit": "^1.0.5",
     "genkitx-pinecone": "^1.13.0",
     "install": "^0.13.0",

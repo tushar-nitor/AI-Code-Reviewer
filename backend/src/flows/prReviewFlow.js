@@ -26,7 +26,6 @@ export const prReviewFlow = ai.defineFlow(
       ? rawResponse
       : "";
 
-    console.log("Text content=============== >>>", textContent);
     if (!textContent) {
       throw new Error("No valid text content returned from the agent");
     }

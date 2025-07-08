@@ -2,6 +2,7 @@
 
 import 'dart:convert';
 import 'package:ai_code_reviewer/common/methods.dart';
+import 'package:ai_code_reviewer/service/document_service.dart';
 import 'package:ai_code_reviewer/widgets/code_rules_dialog.dart';
 import 'package:ai_code_reviewer/widgets/gradient_button.dart';
 import 'package:ai_code_reviewer/widgets/pr_charts.dart';
@@ -27,6 +28,7 @@ enum ReviewInputType { pasteCode, githubPr }
 
 class _CodeReviewScreenState extends State<CodeReviewScreen> {
   ReviewInputType _selectedInputType = ReviewInputType.pasteCode;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   final _languageController = TextEditingController();
   final _focusController = TextEditingController();
@@ -36,7 +38,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
   String _originalCodeForDiff = "";
   String _refactoredCodeForDiff = "";
   String _summarySuggestions = "";
-
+  bool _isLoading = false;
   static final Map<String, Color> typeColors = {
     'SECURITY': Colors.red.shade700,
     'PERFORMANCE': Colors.deepOrange.shade500,
@@ -329,6 +331,66 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: Drawer(
+        child: Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Column(
+            children: [
+              const SizedBox(height: 20),
+
+              CircleAvatar(
+                child: Center(
+                  child: IconButton(
+                    onPressed: () {
+                      _scaffoldKey.currentState?.closeDrawer();
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 40),
+
+              ElevatedButton.icon(
+                onPressed: () async {
+                  try {
+                    setState(() => _isLoading = true);
+                    final result = await DocumentService.uploadDocument();
+                    _scaffoldKey.currentState?.closeDrawer();
+
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('Success! Doument uplaoded')));
+                  } catch (e) {
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(const SnackBar(content: Text('Error: in uplaoding document')));
+                  } finally {
+                    setState(() => _isLoading = false);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadiusGeometry.circular(10)),
+                ),
+                label: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Upload Document', style: TextStyle(color: Colors.white)),
+                icon: const Icon(Icons.upload_file_rounded, color: Colors.white),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+      appBar: AppBar(
+        title: SelectableText(
+          'Review Code',
+          style: theme.textTheme.headlineSmall!.copyWith(color: Colors.black),
+          textAlign: TextAlign.center,
+        ),
+      ),
       body: Center(
         child: Container(
           height: MediaQuery.sizeOf(context).height,
@@ -344,12 +406,6 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              SelectableText(
-                'Review Code',
-                style: theme.textTheme.headlineSmall!.copyWith(color: Colors.black),
-                textAlign: TextAlign.center,
-              ),
-
               const SizedBox(height: 40),
 
               // --- End Radio Button Row ---
@@ -642,7 +698,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
   InputDecoration _inputDecoration(String label, IconData icon) {
     return InputDecoration(
       labelText: label,
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(width: 1)),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(width: 1)),
       prefixIcon: Icon(icon),
       filled: true,
       fillColor: Colors.white,
@@ -685,11 +741,11 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                   } else {
                     ScaffoldMessenger.of(
                       context,
-                    ).showSnackBar(SnackBar(content: SelectableText("No suggestions Available!")));
+                    ).showSnackBar(const SnackBar(content: SelectableText("No suggestions Available!")));
                   }
                 },
                 icon: const Icon(Icons.comment),
-                label: Text("Post Suggestions", style: TextStyle(color: Colors.white)),
+                label: const Text("Post Suggestions", style: TextStyle(color: Colors.white)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
                   iconColor: Colors.white,
@@ -1000,7 +1056,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(showDiffOnly ? 'Diff View' : 'Side-by-Side', style: TextStyle(fontSize: 16)),
+                      Text(showDiffOnly ? 'Diff View' : 'Side-by-Side', style: const TextStyle(fontSize: 16)),
                       const SizedBox(width: 8),
                       Transform.scale(
                         scale: .7,
@@ -1102,7 +1158,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                 ElevatedButton.icon(
                   // The button's label and action change based on the view
                   icon: const Icon(Icons.copy),
-                  label: Text("Copy Refactored Code"),
+                  label: const Text("Copy Refactored Code"),
                   onPressed: () {
                     final textToCopy = refactoredController.text;
                     Clipboard.setData(ClipboardData(text: textToCopy));

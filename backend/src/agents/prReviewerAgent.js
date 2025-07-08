@@ -1,84 +1,83 @@
+// agents/prReviewerAgent.js
 import { ai } from "../ai.js";
-import { z } from "genkit";
-import { fetchPRDiffTool } from "../tools/github_tools.js";
-import { CodeReviewResultSchema } from "../schema/schema.js"; // Assuming this schema is correctly defined
 import { gemini20Flash } from "@genkit-ai/googleai";
+import {
+  CodeReviewResultSchema,
+  CodeReviewerInputSchema,
+} from "../schema/schema.js";
+import { fetchPRDiffTool } from "../tools/github_tools.js";
+import { pineconeRetrievalTool } from "../tools/pinecone_tools.js";
 
-export const prReviewerAgent = ai.definePrompt(
-  {
-    name: "prReviewerAgent",
-    description: "Expert GitHub PR reviewer agent",
-    inputSchema: z.object({
-      owner: z.string().describe("GitHub repository owner"),
-      repo: z.string().describe("GitHub repository name"),
-      pull_number: z.number().describe("The pull request number"),
-      language: z
-        .string()
-        .describe(
-          "The primary programming language of the PR (e.g., 'TypeScript', 'Python', 'Java', 'Dart')."
-        ),
-      focusAreas: z
-        .string()
-        .optional()
-        .describe(
-          "Specific areas to focus the review on (e.g., 'security, performance'). If not provided, cover all best practices."
-        ),
-    }),
-    model: gemini20Flash,
-    tools: [fetchPRDiffTool],
-    outputSchema: CodeReviewResultSchema, // This schema must match the final JSON output
-  },
-  `You are an expert {{language}} code reviewer. Your goal is to provide a comprehensive and constructive review of a GitHub Pull Request.
+export const prReviewerAgent = ai.definePrompt({
+  name: "prReviewerAgent",
+  description:
+    "Orchestrates code review by retrieving guidelines and analyzing PR diffs",
+  inputSchema: CodeReviewerInputSchema,
+  model: gemini20Flash,
+  tools: [fetchPRDiffTool, pineconeRetrievalTool],
+  outputSchema: CodeReviewResultSchema,
 
-**Follow these steps precisely:**
+  system: `You are an AI orchestrator for code reviews. Your task is to:
+  1. Retrieve relevant coding guidelines using pineconeRetrievalTool
+  2. Fetch PR changes using fetchPRDiffTool
+  3. ONLY reviews files that appear in the PR diff
+  4. Analyze changes against guidelines
+  5. Produce structured review output
+  Maintain professional tone and prioritize security/performance issues.`,
 
-1.  **Retrieve Pull Request Diff:**
-    * **ACTION:** Call the \`fetchPRDiffTool\` to get the full unified diff of the pull request.
-    * **Parameters:**
-        \`\`\`json
-        {
-          "owner": "{{owner}}",
-          "repo": "{{repo}}",
-          "pull_number": {{pull_number}}
-        }
-        \`\`\`
-    * **IMPORTANT:** Wait for the tool to return the *entire* diff string. If the tool fails, immediately respond with a JSON output indicating the failure.
+  prompt: ({ owner, repo, pull_number, language, focusAreas }) => `
+### Code Review Workflow for ${repo}#${pull_number} (${language})
 
-2.  **Thorough Diff Analysis:**
-    * **Analyze the ENTIRE returned diff content carefully.** Do NOT skip any files or any parts of the changes.
-    * **Process File by File:** Identify each file changed within the diff. For each file, analyze its specific changes.
-    * **Review Focus:**
-        * **Primary Focus:** Apply a rigorous review based on {{#if focusAreas}}**{{focusAreas}}**{{else}}**all best practices**{{/if}}.
-        * **Specific Checks:** Look for: bugs, performance bottlenecks, security flaws, architectural issues, readability, styling adherence, and naming consistency.
+1. **Retrieve Guidelines**:
+   Call \`pineconeRetrievalTool\` to get ${language} best practices${
+    focusAreas ? ` focusing on ${focusAreas}` : ""
+  }:
+   \`\`\`json
+   {
+     "query": "${language} coding guidelines${
+    focusAreas ? ` ${focusAreas}` : ""
+  }",
+     "namespace": "flutter_uploads",
+     "k": 5
+   }
+   \`\`\`
+
+2. **Get PR Changes**:
+   Call \`fetchPRDiffTool\` to retrieve changes:
+   \`\`\`json
+   {
+     "owner": "${owner}",
+     "repo": "${repo}",
+     "pull_number": ${pull_number}
+   }
+   \`\`\`
+3. REVIEW ONLY THESE FILES FROM THE DIFF:
+   <List of files from the diff will appear here>
 
 
-3.  **Construct JSON Review Result:**
-    * Provide your review in the **EXACT JSON format** specified below.
-    * Ensure all fields are populated correctly.
+4. **Conduct Review**:
+   - Analyze ALL files completely
+   - Cross-reference changes with guidelines
+   - Prioritize: Security > Performance > Maintainability > Style
 
-**Output Format (JSON):**
+### Output Requirements:
 \`\`\`json
 {
-  "summary": "Overall observations about the PR's quality.",
+  "summary": "Concise overall assessment",
   "suggestions": [
     {
-      "fileName": "e.g., src/utils/helper.js",
-      "suggestionText": "Consider adding JSDoc comments for public functions.",
-      "lineNumber": 15,
-      "type": "BUG" | "STYLE" | "READABILITY" | "PERFORMANCE" | "BEST_PRACTICE" | "SECURITY" | "TYPO" | "OTHER",
-      "severity": "LOW" | "MEDIUM" | "HIGH"
+      "fileName": "MUST MATCH EXACT PATH FROM DIFF",
+      "suggestionText": "Clear improvement suggestion",
+      "lineNumber": 123,
+      "type": "SECURITY|PERFORMANCE|READABILITY|BUG|STYLE|BEST_PRACTICE|TYPO|OTHER"
     }
- 
-  ],
-  "parsedDiff": "string", // keep it empty.
-  "message": "Friendly and encouraging closing message for the developer."
+  ]
 }
 \`\`\`
 
-**Additional Important Notes for Reviewer:**
-* Be concise but complete in your suggestions.
-* Maintain a friendly, professional, and constructive tone.
-* The \`lineNumber\` should refer to the line number in the *new* file (after changes) where the suggestion applies, if applicable. Use \`null\` if the suggestion applies to the entire file or is conceptual.
-* If the diff is very large, prioritize critical issues (bugs, security, performance) and major architectural suggestions.
-`
-);
+**Rules**:
+1. Never skip files/sections
+2. Include specific line references
+3. Maintain constructive tone
+4. Output MUST be valid JSON within \`\`\`json block`,
+});
