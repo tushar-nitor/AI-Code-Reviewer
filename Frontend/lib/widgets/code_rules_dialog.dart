@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:ai_code_reviewer/common/methods.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -39,7 +40,7 @@ class _StandardsDialogContentState extends State<StandardsDialogContent> {
 
   Future<void> _fetchStandardsData() async {
     // ... this function does not need to change ...
-    final Uri url = Uri.http('localhost:3333', 'codingStandardsFlow');
+    final Uri url = Uri.https(baseUrl, 'codingStandardsFlow');
     try {
       final response = await http
           .post(

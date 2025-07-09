@@ -1,6 +1,5 @@
 // prompts/postPRCommentsPrompt.js
 import { ai } from "../ai.js";
-import { z } from "genkit";
 import { postGitHubPRCommentTool } from "../tools/github_tools.js";
 import { gemini20Flash } from "@genkit-ai/googleai";
 import {
@@ -38,6 +37,7 @@ Here is the data:
   "owner": {{owner}},
   "repo": {{repo}},
   "pull_number": {{pull_number}},
+  "token": {{token}},
   "suggestions" :{{suggestions}},
   "postAsSingleComment" :{{postAsSingleComment}}
 }

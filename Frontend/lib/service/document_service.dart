@@ -1,12 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:ai_code_reviewer/common/methods.dart';
 import 'package:http/http.dart' as http;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart'; // For kIsWeb
 
 class DocumentService {
   static Future<Map<String, dynamic>> uploadDocument() async {
-    final uri = Uri.http("localhost:3333", 'ingestDocument');
+    final uri = Uri.https(baseUrl, 'ingestDocument');
 
     try {
       // 1. Pick file

@@ -25,7 +25,7 @@ export const prReviewerAgent = ai.definePrompt({
   5. Produce structured review output
   Maintain professional tone and prioritize security/performance issues.`,
 
-  prompt: ({ owner, repo, pull_number, language, focusAreas }) => `
+  prompt: ({ owner, repo, pull_number, language, focusAreas,token }) => `
 ### Code Review Workflow for ${repo}#${pull_number} (${language})
 
 1. **Retrieve Guidelines**:
@@ -48,7 +48,8 @@ export const prReviewerAgent = ai.definePrompt({
    {
      "owner": "${owner}",
      "repo": "${repo}",
-     "pull_number": ${pull_number}
+     "pull_number": ${pull_number},
+     "token": "${token}"
    }
    \`\`\`
 3. REVIEW ONLY THESE FILES FROM THE DIFF:

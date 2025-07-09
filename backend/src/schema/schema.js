@@ -34,6 +34,9 @@ export const CodeReviewerInputSchema = z.object({
   repo: z.string(),
   pull_number: z.number(),
   language: z.string(),
+  token: z
+    .string()
+    .describe("GitHub personal access token for authentication."),
   focusAreas: z.string().optional(),
 });
 /**
@@ -80,6 +83,9 @@ export const PostPRCommentsInputSchema = z.object({
   owner: z.string().describe("Repository owner (e.g., 'octocat')"),
   repo: z.string().describe("Repository name (e.g., 'Spoon-Knife')"),
   pull_number: z.number().describe("Pull request number"),
+  token: z
+    .string()
+    .describe("GitHub personal access token for authentication."),
   suggestions: z
     .array(SuggestionSchema)
     .describe("An array of suggestions to be posted as comments on the PR."),
@@ -130,6 +136,7 @@ export const RefactorFileInputSchema = z.object({
   repo: z.string().describe("Repository name"),
   pull_number: z.number().describe("The pull request number"),
   path: z.string().describe("Path to the file to refactor"),
+  token: z.string().describe("GitHub personal access token for authentication"),
   suggestions: z
     .array(z.string())
     .describe("A list of suggestions from the code review to apply."),

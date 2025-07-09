@@ -113,6 +113,7 @@ export const refactorFileFlow = ai.defineFlow(
         repo: input.repo,
         pull_number: input.pull_number,
         path: input.path,
+        token: input.token,
       });
 
       // Extract text content from raw response

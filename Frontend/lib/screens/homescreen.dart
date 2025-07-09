@@ -33,6 +33,8 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
   final _languageController = TextEditingController();
   final _focusController = TextEditingController();
   final _prUrlController = TextEditingController();
+  final _tokenUrlController = TextEditingController();
+
   final Map<String, bool> _isRefactoringFile = {};
 
   String _originalCodeForDiff = "";
@@ -74,6 +76,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
   Future<void> submitReview() async {
     final language = _languageController.text.trim();
     final focusAreas = _focusController.text.trim();
+    final token = _tokenUrlController.text.trim();
 
     // --- CHANGED: Reset state and start loading FIRST ---
     setState(() {
@@ -127,17 +130,18 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       Map<String, dynamic> requestData;
 
       if (_selectedInputType == ReviewInputType.pasteCode) {
-        url = Uri.http("localhost:3333", 'codeReviewFlow');
+        url = Uri.https(baseUrl, 'codeReviewFlow');
         requestData = {"code": _codeController.text.trim(), "language": language};
         if (focusAreas.isNotEmpty) requestData["focusAreas"] = focusAreas;
       } else {
-        url = Uri.http("localhost:3333", 'prReviewFlow');
+        url = Uri.https(baseUrl, 'prReviewFlow');
         final parsedPr = _parseGitHubPrUrl(_prUrlController.text.trim());
         requestData = {
           "owner": parsedPr!['owner'],
           "repo": parsedPr['repo'],
           "pull_number": parsedPr['pull_number'],
           "language": language,
+          "token": token,
         };
         if (focusAreas.isNotEmpty) requestData["focusAreas"] = focusAreas;
       }
@@ -217,7 +221,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       }
 
       // --- 3. Prepare the request for the new flow ---
-      final uri = Uri.http("localhost:3333", 'refactorFileFlow');
+      final uri = Uri.https(baseUrl, 'refactorFileFlow');
       final headers = {'Content-Type': 'application/json'};
       final parsedPr = _parseGitHubPrUrl(_prUrlController.text.trim());
 
@@ -229,6 +233,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
         "owner": parsedPr['owner'],
         "repo": parsedPr['repo'],
         "pull_number": parsedPr['pull_number'],
+        "token": _tokenUrlController.text.trim(),
         "path": fileName,
         "suggestions": suggestionsToApply,
         "language": _languageController.text.trim(),
@@ -268,13 +273,14 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
   }
 
   Future<Map<String, dynamic>?> postPrCommentsFlow({required BuildContext context}) async {
-    final uri = Uri.http("localhost:3333", 'postPRCommentsFlow');
+    final uri = Uri.https(baseUrl, 'postPRCommentsFlow');
     final headers = {'Content-Type': 'application/json'};
     final parsedPr = _parseGitHubPrUrl(_prUrlController.text.trim());
     final body = {
       "owner": parsedPr!['owner'],
       "repo": parsedPr['repo'],
       "pull_number": parsedPr['pull_number'],
+      "token": _tokenUrlController.text.trim(),
       'suggestions': suggestions,
       'postAsSingleComment': true,
     };
@@ -323,6 +329,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
     _focusController.dispose();
     _prUrlController.dispose();
     _correctedCodeEditor.dispose();
+    _tokenUrlController.dispose();
     super.dispose();
   }
 
@@ -500,10 +507,21 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
                   ),
                 )
               else // _selectedInputType == ReviewInputType.githubPr
-                TextField(
-                  controller: _prUrlController,
-                  decoration: _inputDecoration('GitHub PR URL *', Icons.link),
-                  keyboardType: TextInputType.url,
+                Column(
+                  spacing: 16,
+                  children: [
+                    TextField(
+                      controller: _prUrlController,
+                      decoration: _inputDecoration('GitHub PR URL *', Icons.link),
+                      keyboardType: TextInputType.url,
+                    ),
+                    TextField(
+                      controller: _tokenUrlController,
+                      decoration: _inputDecoration('GitHub token', Icons.security_rounded),
+                      keyboardType: TextInputType.visiblePassword,
+                      obscureText: true,
+                    ),
+                  ],
                 ),
 
               if (error != null) ...[const SizedBox(height: 24), _errorWidget(error!)],

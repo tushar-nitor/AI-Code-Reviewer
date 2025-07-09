@@ -5,50 +5,6 @@ import { Octokit } from "@octokit/rest"; // Correct import for Octokit class
 // gemini20Flash import is not needed in a tools file, it belongs where the model is used (e.g., in prompts or flows)
 import { gemini20Flash } from "@genkit-ai/googleai"; // Remove this line
 
-// --- DEBUGGING OCTOKIT INITIALIZATION ---
-let octokit; // Declare with 'let' to allow re-assignment in case of error handling
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN; // Get token from environment
-
-console.log("Loading github_tools.js module.");
-
-if (!GITHUB_TOKEN) {
-  console.error(
-    "CRITICAL ERROR: GITHUB_TOKEN environment variable is NOT SET. GitHub tools will fail."
-  );
-  // Consider throwing an error here or returning a dummy octokit if you want to avoid crashing startup
-  // For now, we'll let the tools' try/catch handle runtime failures.
-} else {
-  try {
-    octokit = new Octokit({
-      auth: GITHUB_TOKEN,
-    });
-    console.log("Octokit instance successfully initialized.");
-    console.log("  - octokit.pulls exists:", !!octokit.pulls);
-    console.log(
-      "  - octokit.pulls.get exists:",
-      typeof octokit.pulls?.get === "function"
-    );
-    console.log("  - octokit.repos exists:", !!octokit.repos);
-    console.log(
-      "  - octokit.repos.getContent exists:",
-      typeof octokit.repos?.getContent === "function"
-    );
-    console.log("  - octokit.rest.issues exists:", !!octokit.rest?.issues);
-    console.log(
-      "  - octokit.rest.issues.createComment exists:",
-      typeof octokit.rest?.issues?.createComment === "function"
-    );
-  } catch (initError) {
-    console.error(
-      "CRITICAL ERROR: Failed to initialize Octokit:",
-      initError.message
-    );
-    // Set octokit to null or undefined to ensure subsequent tool calls fail gracefully
-    octokit = null;
-  }
-}
-// --- END DEBUGGING OCTOKIT INITIALIZATION ---
-
 /**
  * Genkit Tool to fetch the diff of a GitHub Pull Request.
  */
@@ -64,12 +20,16 @@ export const fetchPRDiffTool = ai.defineTool(
         .string()
         .describe("The name of the repository (e.g., 'Spoon-Knife')."),
       pull_number: z.number().describe("The pull request number."),
+      token: z.string(), // ✅ Add token here
     }),
     outputSchema: z
       .string()
       .describe("The diff content of the pull request as a string."),
   },
-  async ({ owner, repo, pull_number }) => {
+  async ({ owner, repo, pull_number, token }) => {
+    const octokit = new Octokit({
+      auth: token,
+    });
     // Add check if octokit is valid before proceeding
     if (!octokit || typeof octokit.pulls?.get !== "function") {
       const msg = `Octokit or its 'pulls.get' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
@@ -110,6 +70,7 @@ export const postGitHubPRCommentTool = ai.defineTool(
       repo: z.string().describe("Repository name (e.g., 'Spoon-Knife')"),
       pull_number: z.number().describe("Pull request number"),
       commentBody: z.string().describe("The content of the comment."),
+      token: z.string().describe("GitHub personal access token"),
     }),
     outputSchema: z.object({
       success: z.boolean(),
@@ -117,8 +78,11 @@ export const postGitHubPRCommentTool = ai.defineTool(
       commentUrl: z.string().optional(), // URL of the posted comment
     }),
   },
-  async ({ owner, repo, pull_number, commentBody }) => {
+  async ({ owner, repo, pull_number, commentBody, token }) => {
     // Add check if octokit is valid before proceeding
+    const octokit = new Octokit({
+      auth: token,
+    });
     if (!octokit || typeof octokit.rest?.issues?.createComment !== "function") {
       const msg = `Octokit or its 'rest.issues.createComment' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
       console.error(`[postGitHubPRCommentTool] ${msg}`);
@@ -165,6 +129,7 @@ export const getPRInfoTool = ai.defineTool(
         .string()
         .describe("The name of the repository (e.g., 'Spoon-Knife')."),
       pull_number: z.number().describe("The pull request number."),
+      token: z.string().describe("GitHub personal access token"),
     }),
     outputSchema: z.object({
       head_sha: z
@@ -172,7 +137,11 @@ export const getPRInfoTool = ai.defineTool(
         .describe("The SHA of the head of the source branch."),
     }),
   },
-  async ({ owner, repo, pull_number }) => {
+  async ({ owner, repo, pull_number, token }) => {
+    const octokit = new Octokit({
+      auth: token,
+    });
+
     // Add check if octokit is valid before proceeding
     if (!octokit || typeof octokit.pulls?.get !== "function") {
       const msg = `Octokit or its 'pulls.get' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
@@ -181,7 +150,7 @@ export const getPRInfoTool = ai.defineTool(
     }
     try {
       console.log(
-        `[getPRInfoTool] Attempting to fetch PR info for: ${owner}/${repo} Pull #${pull_number}`
+        `[getPRInfoTool] Attempting to fetch PR info for: ${owner}/${repo} Pull #${pull_number} Token: ${token}` // Log the token for debugging
       );
       const response = await octokit.pulls.get({
         owner,
@@ -241,6 +210,7 @@ export const fetchFileContentTool = ai.defineTool(
       owner: z.string(),
       repo: z.string(),
       path: z.string().describe("Path to the file in the repository."),
+      token: z.string().describe("GitHub personal access token"),
       ref: z
         .string()
         .optional()
@@ -250,7 +220,10 @@ export const fetchFileContentTool = ai.defineTool(
     }),
     outputSchema: z.string().describe("The content of the file."),
   },
-  async ({ owner, repo, path, ref }) => {
+  async ({ owner, repo, path, ref, token }) => {
+    const octokit = new Octokit({
+      auth: token,
+    });
     // Add check if octokit is valid before proceeding
     if (!octokit || typeof octokit.repos?.getContent !== "function") {
       const msg = `Octokit or its 'repos.getContent' method is not initialized. Check GITHUB_TOKEN and Octokit setup.`;
@@ -307,7 +280,7 @@ export const refactorCodeTool = ai.defineTool(
         "The complete, final source code for the file after all suggestions have been applied."
       ),
   },
-  async ({ fileName, fileContent, suggestions, language }) => {
+  async ({ fileName, fileContent, suggestions, language, token }) => {
     if (!ai || typeof ai.generate !== "function") {
       // Check if 'ai' is available for LLM call
       const msg = `AI generation client is not initialized for refactorCodeTool.`;

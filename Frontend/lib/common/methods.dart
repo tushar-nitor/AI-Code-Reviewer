@@ -15,3 +15,6 @@ String extractCodeFromMarkdown(String markdownString) {
   // Also, remove any trailing newline that might be part of the captured group.
   return match != null && match.groupCount >= 1 ? match.group(1)!.trimRight() : unescapedString;
 }
+
+final String baseUrl = "ai-code-reviewer-taupe-eight.vercel.app";
+// final String baseUrl = "localhost:3333";

@@ -16,17 +16,21 @@ export const refactorFileAgent = ai.definePrompt({
   system: `You are an AI agent that fetches the HEAD SHA of a GitHub Pull Request and retrieves a file's content at that SHA. Your job is to call the required tools, gather data, and return RefactorFileOutputSchema `,
   outputSchema: RefactorFileOutputSchema,
 
-  prompt: ({ owner, repo, pull_number, path }) => {
+  prompt: ({ owner, repo, pull_number, path, token }) => {
+    console.log(
+      `[refactorFileAgent] Fetching content for PR ${pull_number} in ${owner}/${repo} for file ${path} with token ${token}`
+    );
     return `
 You are fetching content for:
 - Repository: ${owner}/${repo}
 - PR: #${pull_number}
+- Token: ${token}
 - File: ${path}
 
 ### Required Steps:
 1. Call getPRInfoTool with:
 \`\`\`json
-${JSON.stringify({ owner, repo, pull_number }, null, 2)}
+${JSON.stringify({ owner, repo, pull_number, token }, null, 2)}
 \`\`\`
 
 2. Then call fetchFileContentTool with:

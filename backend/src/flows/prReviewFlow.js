@@ -12,6 +12,8 @@ export const prReviewFlow = ai.defineFlow(
       repo: z.string(),
       pull_number: z.number(),
       language: z.string(),
+      token: z.string(),
+
       focusAreas: z.string().optional(),
     }),
     outputSchema: CodeReviewResultSchema,
@@ -53,6 +55,7 @@ export const prReviewFlow = ai.defineFlow(
       owner: input.owner,
       repo: input.repo,
       pull_number: input.pull_number,
+      token: input.token, // 👈 Pass token to the tool
     });
 
     return {
