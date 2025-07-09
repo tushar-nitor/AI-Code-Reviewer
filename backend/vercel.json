@@ -9,7 +9,12 @@
   "routes": [
     {
       "src": "/(.*)",
-      "dest": "/src/app.js"
+      "dest": "/src/app.js",
+      "methods": [
+        "GET",
+        "POST",
+        "OPTIONS"
+      ]
     }
   ]
 }
