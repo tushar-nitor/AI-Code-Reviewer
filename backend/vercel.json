@@ -1,21 +1,21 @@
 {
   "functions": {
-    "app.js": {
+    "src/app.js": {
       "runtime": "@vercel/node@3.0.0"
     }
   },
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "app.js"
+      "dest": "src/app.js"
     },
     {
       "src": "/health",
-      "dest": "app.js"
+      "dest": "src/app.js"
     },
     {
       "src": "/test",
-      "dest": "app.js"
+      "dest": "src/app.js"
     }
   ]
 }
