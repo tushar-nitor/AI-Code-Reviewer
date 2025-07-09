@@ -1,7 +1,8 @@
 {
-  "build": {
-    "src": "app.js",
-    "use": "@vercel/node"
+  "functions": {
+    "app.js": {
+      "runtime": "@vercel/node"
+    }
   },
   "routes": [
     {
