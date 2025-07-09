@@ -55,6 +55,9 @@ server.server.on("request", (req, res) => {
   }
 });
 
-
 // Vercel needs this export
-export default server;
+// Vercel-compatible export
+export default async (req, res) => {
+  // Forward all requests to Genkit's server
+  server.server.emit("request", req, res);
+};
