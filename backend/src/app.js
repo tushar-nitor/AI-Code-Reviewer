@@ -1,5 +1,5 @@
-// import express from "express";
-// import cors from "cors"; // ✅ Import cors package
+import express from "express";
+import cors from "cors";
 import { startFlowServer } from "@genkit-ai/express";
 import { codeReviewFlow } from "./flows/codeReviewsFlow.js";
 import { prReviewFlow } from "./flows/prReviewFlow.js";
@@ -20,31 +20,31 @@ import {
   getPRInfoTool,
 } from "./tools/github_tools.js";
 
-// const app = express();
-// const PORT = process.env.PORT || 4444; // Must use 10000 for Render
-// app.use(cors()); // ✅ Add CORS globally
+// --- RE-INTRODUCE EXPRESS APP ---
+const app = express();
+// The PORT constant is not strictly needed for Vercel, but good practice for local development.
+// Vercel handles the port internally.
+// const PORT = process.env.PORT || 4444; // No need for app.listen on Vercel
 
-// // **1. Define the health check route immediately.**
-// // This makes it available as soon as the server starts.
-// app.get("/health", (req, res) => {
-//   console.log("Health check called");
-//   res.status(200).json({ status: "OK" });
-// });
+app.use(cors()); // Global CORS is fine
 
-// const genkitRouter = express.Router();
-
-// // **2. Mount the Genkit router to the main app.**
-// app.use(genkitRouter);
+// Health check route - crucial for deployment platforms
+app.get("/health", (req, res) => {
+  console.log("Health check called");
+  res.status(200).json({ status: "OK" });
+});
+// --- END RE-INTRODUCE EXPRESS APP ---
 
 console.log("Starting Genkit...");
 
-// **3. Initialize Genkit on the separate router.**
-// Note: The 'port' property is removed as app.listen() now controls this.
+// --- CRITICAL CHANGE: Pass 'app' and REMOVE 'port' ---
 startFlowServer({
-  // app: genkitRouter,
-  port: 3333,
+  app: app, // THIS IS THE EXPRESS INSTANCE VERCEL WILL SERVE
+  // DO NOT include 'port' here when deploying to Vercel/Render!
+  // port: 3333, // <-- REMOVE THIS LINE
+  // pathPrefix: "/", // Only if you want to remove '/api' from URL
   cors: {
-    origin: "*",
+    origin: "*", // This can stay for Genkit's internal CORS
   },
   flows: [
     codeReviewFlow,
@@ -65,9 +65,14 @@ startFlowServer({
     pineconeRetrievalTool,
   ],
 });
+// --- END CRITICAL CHANGE ---
 
-// **4. Start the main Express server.**
-// This makes the /health endpoint live and able to respond to Render.
+// --- EXPORT THE APP FOR VERCEL ---
+// This is the most crucial part for Vercel to pick up your application.
+export default app;
+
+// --- REMOVE app.listen() FOR VERCEL DEPLOYMENT ---
+// Vercel manages the server, your app should NOT call app.listen().
 // app.listen(PORT, () => {
 //   console.log(`🚀 Express Server is running and listening on port ${PORT}`);
 // });
