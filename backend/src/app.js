@@ -41,7 +41,7 @@ startFlowServer({
   app: app, // Pass your main 'app' instance directly
   // Remove the 'port' property here. It's only needed if you want Genkit to start
   // its OWN *separate* server. We want it to integrate with THIS server.
-  // port: 3333, // <--- REMOVE THIS LINE
+  port: 3333, // <--- REMOVE THIS LINE
   // If you need specific CORS for Genkit flows, define it here.
   // Otherwise, the global app.use(cors()) will suffice.
   // cors: {
