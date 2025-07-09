@@ -5,8 +5,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --watch src/app.js",
-    "build": "tsc",
+    "start": "node src/app.js",
+    "build": "npm install",
     "dev": "nodemon src/app.js",
     "genkit:start": "npx genkit start -o -- ",
     "genkit:dev": "npx genkit start -o -- npm run dev"
