@@ -12,6 +12,7 @@ export const codeReviewFlow = ai.defineFlow(
     outputSchema: CodeReviewOutputSchema,
   },
   async (input) => {
+    console.log("Running code review flow with input:", input);
     const response = await ai.generate({
       // MODIFIED: The example for 'suggestions_summary' is updated to guide the AI's output.
       prompt: `

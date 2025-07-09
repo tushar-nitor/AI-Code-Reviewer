@@ -1,5 +1,5 @@
 import express from "express";
-import cors from "cors"; // ✅ Import cors package
+import cors from "cors";
 import { startFlowServer } from "@genkit-ai/express";
 import { codeReviewFlow } from "./flows/codeReviewsFlow.js";
 import { prReviewFlow } from "./flows/prReviewFlow.js";
@@ -21,28 +21,29 @@ import {
 } from "./tools/github_tools.js";
 
 const app = express();
-const PORT = process.env.PORT || 4444; // Must use 10000 for Render
-app.use(cors()); // ✅ Add CORS globally
+const PORT = process.env.PORT || 4444; // Render typically provides PORT, so 4444 is a good fallback.
 
-// **1. Define the health check route immediately.**
-// This makes it available as soon as the server starts.
+app.use(cors()); // Add CORS globally
+
+// 1. Define the health check route immediately.
 app.get("/health", (req, res) => {
   console.log("Health check called");
   res.status(200).json({ status: "OK" });
 });
 
-const genkitRouter = express.Router();
-
-// **2. Mount the Genkit router to the main app.**
-app.use(genkitRouter);
-
 console.log("Starting Genkit...");
 
-// **3. Initialize Genkit on the separate router.**
-// Note: The 'port' property is removed as app.listen() now controls this.
+// **CRITICAL CHANGE HERE:**
+// 2. Initialize Genkit directly on your main 'app' instance.
+//    Remove the 'port' property from startFlowServer, as 'app.listen' handles the port.
+//    Genkit will now serve its flows on the same port as your main Express app.
 startFlowServer({
-  app: genkitRouter,
-  port: 3333,
+  app: app, // Pass your main 'app' instance directly
+  // Remove the 'port' property here. It's only needed if you want Genkit to start
+  // its OWN *separate* server. We want it to integrate with THIS server.
+  // port: 3333, // <--- REMOVE THIS LINE
+  // If you need specific CORS for Genkit flows, define it here.
+  // Otherwise, the global app.use(cors()) will suffice.
   // cors: {
   //   origin: "*",
   // },
@@ -66,8 +67,8 @@ startFlowServer({
   ],
 });
 
-// **4. Start the main Express server.**
-// This makes the /health endpoint live and able to respond to Render.
+// 3. Start the main Express server.
+// This is the ONLY server that Render will expose.
 app.listen(PORT, () => {
   console.log(`🚀 Server is running and listening on port ${PORT}`);
 });
