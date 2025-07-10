@@ -7,98 +7,191 @@ import {
   RefactorFileOutputSchema,
 } from "../schema/schema.js";
 
-// Keep your utility function. We'll use it for both agents if they output raw text.
-// If your agents are now consistently returning structured data due to `outputSchema`
-// and you *don't* get the '```json' wrapper, you can remove this utility function and
-// simplify the response extraction. But for robustness, let's keep it for now.
 function parseAndSanitizeAgentResponse(responseText) {
-  const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/);
-
-  if (!jsonMatch || !jsonMatch[1]) {
-    // If no ```json block, try parsing directly as the whole response might be JSON
-    try {
-      return JSON.parse(responseText);
-    } catch (directParseError) {
-      throw new Error(
-        `AI response did not contain a valid JSON code block or direct JSON as expected. Raw response: ${responseText.substring(
-          0,
-          200
-        )}...`
-      );
-    }
-  }
-
-  let rawJsonContent = jsonMatch[1];
-  let parsedData;
-
+  // Try direct JSON parse first (simplest case)
   try {
-    // Attempt to parse the JSON as is
-    parsedData = JSON.parse(rawJsonContent);
+    return JSON.parse(responseText);
+  } catch (directError) {
+    console.debug("Direct parse failed, trying other methods:", directError);
+  }
 
-    // Only attempt unescaping if 'originalContent' exists (for refactorFileAgent's output)
-    if (
-      parsedData.originalContent &&
-      typeof parsedData.originalContent === "string"
-    ) {
-      let content = parsedData.originalContent;
-      try {
-        content = JSON.parse(`"${content}"`);
-      } catch (unescapeError) {
-        console.warn(
-          `Failed to unescape originalContent using JSON.parse method: ${unescapeError.message}`
-        );
-        content = content.replace(/\\\\/g, "\\");
-        content = content.replace(/\\'/g, "'");
-        content = content.replace(/\\"/g, '"');
-        content = content.replace(/\\n/g, "\n");
-        content = content.replace(/\\t/g, "\t");
-      }
-      parsedData.originalContent = content;
+  // Extract content from potential code blocks
+  let jsonContent = extractJsonContent(responseText);
+  console.debug(
+    "Extracted JSON content:",
+    jsonContent.substring(0, 200) + "..."
+  );
+
+  // First attempt with basic sanitization
+  try {
+    const basicSanitized = basicSanitizeJson(jsonContent);
+    return JSON.parse(basicSanitized);
+  } catch (basicError) {
+    console.warn("Basic sanitization failed:", basicError);
+  }
+
+  // Second attempt with advanced sanitization
+  try {
+    const advancedSanitized = advancedSanitizeJson(jsonContent);
+    const parsed = JSON.parse(advancedSanitized);
+    return processContentFields(parsed);
+  } catch (advancedError) {
+    console.warn("Advanced sanitization failed:", advancedError);
+  }
+
+  // Final attempt with field-by-field extraction
+  try {
+    const extracted = extractFieldsFromMalformedJson(jsonContent);
+    if (extracted) {
+      return processContentFields(extracted);
     }
-  } catch (e) {
-    console.warn(
-      "Attempting to fix bad JSON escaping in originalContent field from primary parse failure..."
-    );
+  } catch (extractionError) {
+    console.error("Field extraction failed:", extractionError);
+  }
 
-    const originalContentRegex =
-      /("originalContent"\s*:\s*)("((?:[^"\\]|\\.)*)")/s;
-    const matchOriginalContent = rawJsonContent.match(originalContentRegex);
+  throw new Error(
+    `Failed to parse AI response after all attempts.\n` +
+      `Original error position: ${getErrorPositionContext(
+        jsonContent,
+        919
+      )}\n` +
+      `Response start: ${jsonContent.substring(0, 300)}...`
+  );
+}
 
-    if (matchOriginalContent && matchOriginalContent[3] !== undefined) {
-      let problematicContentValue = matchOriginalContent[3];
+// Helper function to extract JSON from code blocks
+function extractJsonContent(text) {
+  let content = text.trim();
 
-      try {
-        problematicContentValue = JSON.parse(`"${problematicContentValue}"`);
-      } catch (unescapeError) {
-        console.warn(
-          `Failed to unescape problematicContentValue for re-stringifying: ${unescapeError.message}. Proceeding with simpler cleanup.`
-        );
-        problematicContentValue = problematicContentValue.replace(
-          /\\\\/g,
-          "\\"
-        );
-        problematicContentValue = problematicContentValue.replace(/\\'/g, "'");
-        problematicContentValue = problematicContentValue.replace(/\\"/g, '"');
-        problematicContentValue = problematicContentValue.replace(/\\n/g, "\n");
-        problematicContentValue = problematicContentValue.replace(/\\t/g, "\t");
-      }
-
-      const correctedContentValueForJson = JSON.stringify(
-        problematicContentValue
-      ).slice(1, -1);
-
-      const correctedJsonContent = rawJsonContent.replace(
-        originalContentRegex,
-        `$1"${correctedContentValueForJson}"`
-      );
-      parsedData = JSON.parse(correctedJsonContent);
-    } else {
-      throw e;
+  // Remove code block markers if present
+  if (content.startsWith("```")) {
+    content = content.slice(content.indexOf("\n") + 1);
+    const lastBackticks = content.lastIndexOf("```");
+    if (lastBackticks > -1) {
+      content = content.slice(0, lastBackticks);
     }
   }
+
+  return content.trim();
+}
+
+// Basic JSON sanitization
+function basicSanitizeJson(jsonString) {
+  return (
+    jsonString
+      // Remove BOM if present
+      .replace(/^\uFEFF/, "")
+      // Fix common escape sequences
+      .replace(/\\'/g, "'")
+      .replace(/\\"/g, '"')
+      .replace(/\\\n/g, "\n")
+      .replace(/\\\t/g, "\t")
+      .replace(/\\\r/g, "\r")
+      .replace(/\\\\/g, "\\")
+  );
+}
+
+// Advanced JSON sanitization
+function advancedSanitizeJson(jsonString) {
+  let sanitized = jsonString;
+
+  // 1. Fix unicode escapes
+  sanitized = sanitized.replace(
+    /\\u([0-9a-fA-F]{0,3}[^0-9a-fA-F])/g,
+    (match, group) => {
+      return group.length === 4
+        ? match
+        : `\\u${"0".repeat(4 - group.length)}${group}`;
+    }
+  );
+
+  // 2. Fix hex escapes
+  sanitized = sanitized.replace(
+    /\\x([0-9a-fA-F]{0,1}[^0-9a-fA-F])/g,
+    (match, group) => {
+      return group.length === 2
+        ? match
+        : `\\x${"0".repeat(2 - group.length)}${group}`;
+    }
+  );
+
+  // 3. Fix malformed control characters
+  sanitized = sanitized.replace(/\\([^"\\/bfnrtu0-9x])/g, "\\\\$1");
+
+  // 4. Balance quotes in string values
+  sanitized = sanitized.replace(/"([^"\\]*(?:\\.[^"\\]*)*)(?=")/g, (match) => {
+    return match.replace(/"/g, '\\"');
+  });
+
+  // 5. Fix trailing commas
+  sanitized = sanitized.replace(/,(\s*[}\]])/g, "$1");
+
+  // 6. Ensure proper field separators
+  sanitized = sanitized.replace(
+    /"\s*:\s*([^"{}\[\],\s]+)([,\s}])/g,
+    '" : "$1"$2'
+  );
+
+  return sanitized;
+}
+
+// Process content fields with proper unescaping
+function processContentFields(parsedData) {
+  const contentFields = [
+    "originalContent",
+    "refactoredContent",
+    "diff",
+    "message",
+  ];
+
+  contentFields.forEach((field) => {
+    if (parsedData[field] && typeof parsedData[field] === "string") {
+      parsedData[field] = parsedData[field]
+        .replace(/\\n/g, "\n")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, "\\")
+        .replace(/\\r/g, "\r")
+        .replace(/\\'/g, "'");
+    }
+  });
+
   return parsedData;
 }
 
+// Extract fields from malformed JSON
+function extractFieldsFromMalformedJson(text) {
+  const fields = ["originalContent", "refactoredContent", "diff", "message"];
+  const result = {};
+  let hasData = false;
+
+  fields.forEach((field) => {
+    const regex = new RegExp(
+      `"${field}"\\s*:\\s*((?:"((?:\\\\"|[^"])*)"|([^",}\\s]+)))`,
+      "g"
+    );
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const value = match[2] || match[3];
+      if (value) {
+        result[field] = value.replace(/\\\\/g, "\\").replace(/\\"/g, '"');
+        hasData = true;
+      }
+    }
+  });
+
+  return hasData ? result : null;
+}
+
+// Get context around error position
+function getErrorPositionContext(text, position) {
+  const start = Math.max(0, position - 20);
+  const end = Math.min(text.length, position + 20);
+  return `...${text.substring(start, position)}[ERROR HERE]${text.substring(
+    position,
+    end
+  )}...`;
+}
 export const refactorFileFlow = ai.defineFlow(
   {
     name: "refactorFileFlow",
