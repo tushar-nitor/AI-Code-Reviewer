@@ -202,7 +202,9 @@ async function extractTextFromPdf(buffer) {
     throw new Error("Invalid or empty PDF buffer passed");
   }
   try {
-    const data = await pdfParse(buffer);
+    //pdfParse.default(data)
+
+    const data = await pdfParse.default(buffer);
     return data.text || "";
   } catch (error) {
     console.error("pdf-parse failed:", error);
