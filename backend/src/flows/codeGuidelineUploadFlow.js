@@ -4,10 +4,8 @@ import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import { Pinecone } from "@pinecone-database/pinecone";
 import { z } from "genkit";
 import mammoth from "mammoth";
-import { PDFExtract } from "pdf.js-extract";
+import * as pdfParse from "pdf-parse/lib/pdf-parse.js";
 
-const pdfExtract = new PDFExtract();
-const options = {};
 // Initialize Pinecone
 const pinecone = new Pinecone({
   apiKey: process.env.PINECONE_API_KEY,
@@ -176,7 +174,7 @@ export const ingestDocument = ai.defineFlow(
     let content;
     try {
       if (mimeType.includes("pdf")) {
-        const data = await extractTextFromPdfJsExtract(buffer);
+        const data = await extractTextFromPdf(buffer);
 
         content = data;
       } else if (mimeType.includes("word") || mimeType.includes("docx")) {
@@ -199,24 +197,15 @@ export const ingestDocument = ai.defineFlow(
 );
 
 // Text extraction helpers
-async function extractTextFromPdfJsExtract(buffer) {
+async function extractTextFromPdf(buffer) {
   if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
     throw new Error("Invalid or empty PDF buffer passed");
   }
   try {
-    const data = await pdfExtract.extractBuffer(buffer, options);
-    let fullText = "";
-    // data.pages is an array of pages
-    for (const page of data.pages) {
-      // page.content is an array of text items with x, y, str properties
-      for (const item of page.content) {
-        fullText += item.str;
-      }
-      fullText += "\n"; // Add a newline between pages
-    }
-    return fullText;
+    const data = await pdfParse(buffer);
+    return data.text || "";
   } catch (error) {
-    console.error("pdf.js-extract failed:", error);
+    console.error("pdf-parse failed:", error);
     throw new Error(`Text extraction failed: ${error.message}`);
   }
 }
