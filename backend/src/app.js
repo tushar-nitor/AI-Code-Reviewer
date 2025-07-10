@@ -28,6 +28,12 @@ const server = startFlowServer({
   cors: {
     origin: "*", // This can stay for Genkit's internal CORS
   },
+  jsonParserOptions: {
+    // Body parser options
+    limit: "10mb", // Default: '100kb'
+    strict: false,
+    type: "application/json",
+  },
   flows: [
     codeReviewFlow,
     prReviewFlow,

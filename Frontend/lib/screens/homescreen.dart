@@ -393,7 +393,7 @@ class _CodeReviewScreenState extends State<CodeReviewScreen> {
       ),
       appBar: AppBar(
         title: SelectableText(
-          'Review Code',
+          'Code Reviewer',
           style: theme.textTheme.headlineSmall!.copyWith(color: Colors.black),
           textAlign: TextAlign.center,
         ),
