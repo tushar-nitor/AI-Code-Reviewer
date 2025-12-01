@@ -65,4 +65,34 @@ The tool helps developers automatically **review code blocks**, **analyze GitHub
 
 ---
 
+---
+
+## 🧠 How It Works
+
+### **1️⃣ Developer inputs code block OR selects a GitHub PR**  
+Frontend sends request to Genkit backend.
+
+### **2️⃣ Genkit Agent analyzes code**  
+Runs through tools:  
+- Syntax analysis  
+- Code quality evaluation  
+- Security checks  
+- Complexity evaluation  
+- Refactoring engine
+
+### **3️⃣ Suggestions returned to frontend**  
+Displayed in a clean, structured UI.
+
+### **4️⃣ User applies suggestions**  
+System regenerates updated code and shows final diff.
+
+---
+
+## 🧑‍💻 Author  
+Built by **Tushar Negi**  
+Flutter • Genkit • AI Agents • Full-Stack Engineering
+
+---
+
+
 
